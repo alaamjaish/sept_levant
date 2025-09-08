@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import LiveTranscriber, { LiveTranscriberHandle } from "@/components/LiveTranscriber";
 import LevelMeter from "@/components/LevelMeter";
+import AudioPlayer from "@/components/AudioPlayer";
 import { supabase } from "@/lib/supabaseClient";
 
 type Exercise = {
@@ -374,37 +375,20 @@ export default function SpeakingPage() {
                 </div>
               </div>
             )}
-            <button
-              disabled={recording}
-              className="bg-slate-900 text-white px-4 py-2 rounded-lg mr-3 hover:bg-slate-800 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-500 disabled:opacity-50"
-              onClick={() => {
-                // Ensure mic/transcriber are fully stopped before playing
-                try { transcriberRef.current?.stop(); } catch {}
-                try { micStream?.getTracks().forEach((t) => t.stop()); } catch {}
-                // Cancel any background transcription and clear UI state
-                try { transcribeAbortRef.current?.abort(); } catch {}
-                transcribeAbortRef.current = null;
-                setTranscribing(false);
-                new Audio(exercise.audio_url).play();
-              }}
-            >
-              Listen
-            </button>
-            {!recording ? (
-              <button
-                className="px-4 py-2 rounded-lg text-white bg-gradient-to-r from-indigo-600 to-sky-500 shadow-sm hover:shadow-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500"
-                onClick={startRecording}
-              >
-                Record
-              </button>
-            ) : (
-              <button
-                className="bg-rose-600 text-white px-4 py-2 rounded-lg hover:bg-rose-500 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-rose-500"
-                onClick={stopRecording}
-              >
-                Stop
-              </button>
-            )}
+            <div className="mb-3">
+              <AudioPlayer
+                title="Reference audio"
+                src={exercise.audio_url}
+                disabled={recording}
+                onPlayRequest={() => {
+                  try { transcriberRef.current?.stop(); } catch {}
+                  try { micStream?.getTracks().forEach((t) => t.stop()); } catch {}
+                  try { transcribeAbortRef.current?.abort(); } catch {}
+                  transcribeAbortRef.current = null;
+                  setTranscribing(false);
+                }}
+              />
+            </div>
             {message && <div className="mt-4 text-slate-700">{message}</div>}
             {recording && (
               <div className="mt-3">
@@ -459,11 +443,11 @@ export default function SpeakingPage() {
                       Last recording: {lastDurationSec !== null ? `${Math.floor(lastDurationSec/60).toString().padStart(2,'0')}:${(lastDurationSec%60).toString().padStart(2,'0')}` : '—'}
                     </div>
                     <div className="flex gap-2">
-                      <button className="text-sm px-3 py-1.5 rounded ring-1 ring-slate-300 hover:bg-slate-50" onClick={() => { if (lastStudentBlob) new Audio(URL.createObjectURL(lastStudentBlob)).play(); }}>Play</button>
                       <button className="text-sm px-3 py-1.5 rounded ring-1 ring-slate-300 hover:bg-slate-50" onClick={() => { setLastStudentBlob(null); setLastTranscript(""); setLastScore(null); setMessage(""); }}>Delete</button>
                       <button className="text-sm px-3 py-1.5 rounded bg-slate-900 text-white hover:bg-slate-800" onClick={startRecording}>Re-record</button>
                     </div>
                   </div>
+                  <AudioPlayer title="Last recording" src={lastStudentBlob || undefined} />
                   <div className="mt-3">
                     <div className="flex items-center justify-between mb-1">
                       <div className="text-sm font-medium text-slate-700">Transcript</div>
@@ -740,3 +724,10 @@ function blobToBase64(blob: Blob): Promise<string> {
     reader.readAsDataURL(blob);
   });
 }
+
+
+
+
+
+
+
