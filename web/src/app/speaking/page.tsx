@@ -261,6 +261,32 @@ export default function SpeakingPage() {
                       Edit Text
                     </button>
                   )}
+                  {role === "teacher" && exercise && (
+                    <button
+                      className="text-sm px-3 py-1.5 rounded ring-1 ring-rose-300 text-rose-600 hover:bg-rose-50"
+                      onClick={async () => {
+                        if (!exercise?.id) return;
+                        if (!confirm("Delete this exercise?")) return;
+                        try {
+                          const res = await fetch("/api/exercises/delete", {
+                            method: "DELETE",
+                            credentials: "include",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ id: exercise.id }),
+                          });
+                          const j = await res.json().catch(() => ({}));
+                          if (!res.ok || (j as any)?.error) throw new Error(((j as any)?.error) || `Failed ${res.status}`);
+                          setExercise(null);
+                          setSelectedId(null);
+                          await refreshLibrary();
+                        } catch (e) {
+                          alert((e as any)?.message || "Delete failed");
+                        }
+                      }}
+                    >
+                      Delete
+                    </button>
+                  )}
                   {role === "teacher" && !teacherRecording && (
                     <button
                       className="text-sm px-3 py-1.5 rounded ring-1 ring-slate-300 hover:bg-slate-50"
