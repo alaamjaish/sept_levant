@@ -19,6 +19,19 @@ export async function DELETE(req: NextRequest) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  // Check row is visible (read policy) to give clearer errors
+  const exists = await supabase
+    .from("exercises")
+    .select("id")
+    .eq("id", id)
+    .maybeSingle();
+  if ((exists as any)?.error) {
+    return NextResponse.json({ error: (exists as any).error.message }, { status: 400 });
+  }
+  if (!(exists as any)?.data) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   const { data, error } = await supabase
     .from("exercises")
     .delete()
@@ -26,7 +39,7 @@ export async function DELETE(req: NextRequest) {
     .select("id");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  if (!data || data.length === 0) return NextResponse.json({ error: "Not found or not allowed" }, { status: 404 });
+  if (!data || data.length === 0)
+    return NextResponse.json({ error: "Not allowed (RLS). Ensure delete_exercises_teachers policy exists and you are a teacher." }, { status: 403 });
   return NextResponse.json({ ok: true });
 }
-
