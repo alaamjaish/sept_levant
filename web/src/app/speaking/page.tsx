@@ -45,6 +45,11 @@ export default function SpeakingPage() {
   const [lastDurationSec, setLastDurationSec] = useState<number | null>(null);
   const [editingTranscript, setEditingTranscript] = useState(false);
   const [transcriptDraft, setTranscriptDraft] = useState("");
+  // Inline edit/replace near the exercise box (teacher)
+  const [editingExercise, setEditingExercise] = useState(false);
+  const [exerciseDraft, setExerciseDraft] = useState("");
+  const [replaceSaving, setReplaceSaving] = useState(false);
+  const [replaceError, setReplaceError] = useState("");
 
   useEffect(() => {
     fetchExercise();
@@ -76,6 +81,7 @@ export default function SpeakingPage() {
   useEffect(() => {
     setEditingTranscript(false);
     setTranscriptDraft("");
+    if (exercise?.arabic_text) setExerciseDraft(exercise.arabic_text);
   }, [exercise?.id]);
 
   async function fetchExercise() {
@@ -128,9 +134,10 @@ export default function SpeakingPage() {
         });
         const data = await tRes.json();
         transcript = data?.transcript || "";
-      } catch (e: any) {
+      } catch (e: unknown) {
         // If aborted, just exit early and clear state
-        if (e?.name === "AbortError") {
+        const err = e as { name?: string };
+        if (err?.name === "AbortError") {
           setTranscribing(false);
           transcribeAbortRef.current = null;
           return;
@@ -235,7 +242,138 @@ export default function SpeakingPage() {
 
         {exercise && (
           <div className="bg-white/90 rounded-xl ring-1 ring-slate-900/10 shadow-sm p-6">
-            <div className="text-3xl mb-4 text-slate-800">{exercise.arabic_text}</div>
+            {/* Exercise text + controls row */}
+            {!editingExercise ? (
+              <div className="flex items-start justify-between gap-3">
+                <div className="text-3xl mb-4 text-slate-800 flex-1 break-words">{exercise.arabic_text}</div>
+                <div className="flex flex-col gap-2 items-end">
+                  <button
+                    className="text-sm px-3 py-1.5 rounded bg-slate-900 text-white hover:bg-slate-800"
+                    onClick={() => new Audio(exercise.audio_url).play()}
+                  >
+                    Play
+                  </button>
+                  {role === "teacher" && (
+                    <button
+                      className="text-sm px-3 py-1.5 rounded ring-1 ring-slate-300 hover:bg-slate-50"
+                      onClick={() => { setEditingExercise(true); setExerciseDraft(exercise.arabic_text); }}
+                    >
+                      Edit Text
+                    </button>
+                  )}
+                  {role === "teacher" && !teacherRecording && (
+                    <button
+                      className="text-sm px-3 py-1.5 rounded ring-1 ring-slate-300 hover:bg-slate-50"
+                      onClick={async () => {
+                        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        const mr = new MediaRecorder(stream);
+                        teacherChunksRef.current = [];
+                        setTeacherStream(stream);
+                        mr.ondataavailable = (e) => teacherChunksRef.current.push(e.data);
+                        mr.onstop = () => { setTeacherRecording(false); setTeacherStream(null); };
+                        mr.start();
+                        teacherMediaRef.current = mr;
+                        setTeacherRecording(true);
+                      }}
+                    >
+                      Replace Audio (Record)
+                    </button>
+                  )}
+                  {role === "teacher" && teacherRecording && (
+                    <button
+                      className="text-sm px-3 py-1.5 rounded bg-rose-600 text-white hover:bg-rose-500"
+                      onClick={() => {
+                        try { teacherMediaRef.current?.stop(); } catch {}
+                        try { teacherMediaRef.current?.stream.getTracks().forEach((t) => t.stop()); } catch {}
+                      }}
+                    >
+                      Stop Recording
+                    </button>
+                  )}
+                  {role === "teacher" && teacherChunksRef.current.length > 0 && (
+                    <div className="flex gap-2">
+                      <button
+                        className="text-sm px-3 py-1.5 rounded ring-1 ring-slate-300 hover:bg-slate-50"
+                        onClick={() => new Audio(URL.createObjectURL(new Blob(teacherChunksRef.current, { type: 'audio/webm' }))).play()}
+                      >
+                        Play New
+                      </button>
+                      <button
+                        disabled={replaceSaving}
+                        className="text-sm px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50"
+                        onClick={async () => {
+                          if (!exercise?.id) return;
+                          setReplaceError("");
+                          setReplaceSaving(true);
+                          try {
+                            const blob = new Blob(teacherChunksRef.current, { type: 'audio/webm' });
+                            const { data: u } = await supabase.auth.getUser();
+                            const path = `audio/${u?.user?.id || 'anon'}/${Date.now()}.webm`;
+                            const { error: upErr } = await supabase.storage.from('audio').upload(path, blob, {
+                              contentType: 'audio/webm',
+                              upsert: false,
+                            });
+                            if (upErr) throw new Error(upErr.message || 'Upload failed');
+                            const { data: pub } = supabase.storage.from('audio').getPublicUrl(path);
+                            const res = await fetch('/api/exercises/update', {
+                              method: 'PATCH',
+                              credentials: 'include',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ id: exercise.id, audio_url: pub.publicUrl }),
+                            });
+                            const j = await res.json();
+                            if (!res.ok || !j?.ok) throw new Error(j?.error || `Failed ${res.status}`);
+                            setExercise(j.exercise);
+                            teacherChunksRef.current = [];
+                          } catch (e: unknown) {
+                            const msg = (e as Error)?.message || 'Failed to replace audio';
+                            setReplaceError(msg);
+                          } finally {
+                            setReplaceSaving(false);
+                          }
+                        }}
+                      >
+                        Use This Audio
+                      </button>
+                      <button
+                        className="text-sm px-3 py-1.5 rounded ring-1 ring-slate-300 hover:bg-slate-50"
+                        onClick={() => { teacherChunksRef.current = []; }}
+                      >
+                        Discard
+                      </button>
+                    </div>
+                  )}
+                  {replaceError && (<div className="text-xs text-rose-600 max-w-56 text-right">{replaceError}</div>)}
+                </div>
+              </div>
+            ) : (
+              <div className="mb-4">
+                <label className="text-sm text-slate-700 mb-1 block">Edit text</label>
+                <textarea className="w-full border border-slate-300 rounded-lg p-2" rows={3} value={exerciseDraft} onChange={(e) => setExerciseDraft(e.target.value)} />
+                <div className="mt-2 flex gap-2">
+                  <button
+                    className="px-3 py-1.5 rounded bg-slate-900 text-white hover:bg-slate-800"
+                    onClick={async () => {
+                      if (!exercise?.id) return;
+                      const res = await fetch('/api/exercises/update', {
+                        method: 'PATCH',
+                        credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: exercise.id, arabic_text: exerciseDraft }),
+                      });
+                      const j = await res.json().catch(() => ({}));
+                      if (res.ok && (j as any)?.ok) {
+                        setExercise((j as any).exercise);
+                        setEditingExercise(false);
+                      } else {
+                        alert(((j as any)?.error) || `Failed to save (${res.status})`);
+                      }
+                    }}
+                  >Save</button>
+                  <button className="px-3 py-1.5 rounded ring-1 ring-slate-300 hover:bg-slate-50" onClick={() => { setEditingExercise(false); setExerciseDraft(exercise?.arabic_text || ''); }}>Cancel</button>
+                </div>
+              </div>
+            )}
             <button
               disabled={recording}
               className="bg-slate-900 text-white px-4 py-2 rounded-lg mr-3 hover:bg-slate-800 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-500 disabled:opacity-50"
@@ -550,8 +688,9 @@ export default function SpeakingPage() {
                   teacherChunksRef.current = [];
                   // refresh library so the new exercise appears in chips
                   await refreshLibrary();
-                } catch (e: any) {
-                  setBuilderError(e?.message || "Failed to save exercise. Check role and storage policies.");
+                } catch (e: unknown) {
+                  const msg = (e as Error)?.message || "Failed to save exercise. Check role and storage policies.";
+                  setBuilderError(msg);
                 } finally {
                   setSaving(false);
                 }
