@@ -165,3 +165,12 @@ create policy "insert_audio_teachers" on storage.objects
 --   );
 
 commit;
+
+-- Teachers can delete audio objects
+drop policy if exists "delete_audio_teachers" on storage.objects;
+create policy "delete_audio_teachers" on storage.objects
+  for delete using (
+    bucket_id = 'audio' and exists (
+      select 1 from public.profiles p where p.id = auth.uid() and p.role = 'teacher'
+    )
+  );

@@ -268,11 +268,12 @@ export default function SpeakingPage() {
                         if (!exercise?.id) return;
                         if (!confirm("Delete this exercise?")) return;
                         try {
+                        const delAudio = confirm("Also delete the audio file from storage?");
                           const res = await fetch("/api/exercises/delete", {
                             method: "DELETE",
                             credentials: "include",
                             headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ id: exercise.id }),
+                            body: JSON.stringify({ id: exercise.id, deleteAudio: delAudio })
                           });
                           const j = await res.json().catch(() => ({}));
                           if (!res.ok || (j as any)?.error) throw new Error(((j as any)?.error) || `Failed ${res.status}`);
