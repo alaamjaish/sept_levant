@@ -26,9 +26,10 @@ export async function PATCH(req: NextRequest) {
     .from("exercises")
     .update(updates)
     .eq("id", id)
-    .select("*")
-    .single();
+    .select("*");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  return NextResponse.json({ ok: true, exercise: data });
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return NextResponse.json({ error: "No row updated" }, { status: 404 });
+  return NextResponse.json({ ok: true, exercise: row });
 }
