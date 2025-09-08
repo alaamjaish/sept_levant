@@ -32,6 +32,19 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });
   }
 
+  // Ensure the row exists and is readable under RLS
+  const exists = await supabase
+    .from("exercises")
+    .select("id")
+    .eq("id", id)
+    .maybeSingle();
+  if ((exists as any)?.error) {
+    return NextResponse.json({ error: (exists as any).error.message }, { status: 400 });
+  }
+  if (!(exists as any)?.data) {
+    return NextResponse.json({ error: "Exercise not found (or no read access)" }, { status: 404 });
+  }
+
   const { data, error } = await supabase
     .from("exercises")
     .update(updates)
@@ -40,6 +53,10 @@ export async function PATCH(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   const row = Array.isArray(data) ? data[0] : data;
-  if (!row) return NextResponse.json({ error: "No row updated" }, { status: 404 });
+  if (!row) {
+    return NextResponse.json({
+      error: "No row updated (likely RLS blocked the update). Ensure update_exercises_teachers policy exists and your profile role is 'teacher'.",
+    }, { status: 403 });
+  }
   return NextResponse.json({ ok: true, exercise: row });
 }
