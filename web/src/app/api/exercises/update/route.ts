@@ -3,9 +3,19 @@ import { cookies } from "next/headers";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 
 // Minimal update endpoint: teachers can update text/audio_url of an exercise
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 export async function PATCH(req: NextRequest) {
   const { id, arabic_text, audio_url } = await req.json();
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+  if (!isUuid(id)) {
+    return NextResponse.json(
+      { error: "This looks like a demo exercise. Create or load a real exercise to save." },
+      { status: 400 }
+    );
+  }
 
   const cookieStore = cookies();
   const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
