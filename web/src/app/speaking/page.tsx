@@ -29,6 +29,7 @@ export default function SpeakingPage() {
   const transcriberRef = useRef<LiveTranscriberHandle>(null);
   const [micStream, setMicStream] = useState<MediaStream | null>(null);
   const recStartRef = useRef<number | null>(null);
+  const transcribeAbortRef = useRef<AbortController | null>(null);
 
   const teacherMediaRef = useRef<MediaRecorder | null>(null);
   const teacherChunksRef = useRef<BlobPart[]>([]);
@@ -62,6 +63,8 @@ export default function SpeakingPage() {
       try { mediaRecorderRef.current?.stop(); } catch {}
       try { mediaRecorderRef.current?.stream.getTracks().forEach((t) => t.stop()); } catch {}
       try { micStream?.getTracks().forEach((t) => t.stop()); } catch {}
+      try { transcribeAbortRef.current?.abort(); } catch {}
+      transcribeAbortRef.current = null;
     };
   }, []);
 
@@ -86,6 +89,10 @@ export default function SpeakingPage() {
     setLastTranscript("");
     setLivePartial("");
     setLiveFinals([]);
+    // If a background transcription is running, cancel it
+    try { transcribeAbortRef.current?.abort(); } catch {}
+    transcribeAbortRef.current = null;
+    setTranscribing(false);
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const mr = new MediaRecorder(stream);
     setMicStream(stream);
@@ -99,16 +106,32 @@ export default function SpeakingPage() {
       let transcript = "";
       try {
         const base64 = await blobToBase64(blob);
+        // Abortable request so user actions (e.g., Listen) can cancel
+        const ctrl = new AbortController();
+        transcribeAbortRef.current = ctrl;
         const tRes = await fetch("/api/speechmatics", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ audioBase64: base64, mimeType: blob.type || "audio/webm" }),
+          signal: ctrl.signal,
         });
         const data = await tRes.json();
         transcript = data?.transcript || "";
-      } catch {}
+      } catch (e: any) {
+        // If aborted, just exit early and clear state
+        if (e?.name === "AbortError") {
+          setTranscribing(false);
+          transcribeAbortRef.current = null;
+          return;
+        }
+      }
       setTranscribing(false);
       setLastTranscript(transcript || "");
+      // If cancelled in the meantime, do not proceed
+      if (transcribeAbortRef.current?.signal.aborted) {
+        transcribeAbortRef.current = null;
+        return;
+      }
       const sRes = await fetch("/api/check-accuracy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -116,14 +139,20 @@ export default function SpeakingPage() {
           originalText: exercise?.arabic_text ?? "",
           spokenText: transcript,
         }),
+        signal: transcribeAbortRef.current?.signal,
       });
-      const { score } = await sRes.json();
+      let score = 0;
+      try {
+        const j = await sRes.json();
+        score = j?.score ?? 0;
+      } catch {}
       setLastScore(score);
       const passed = score >= 90;
       setMessage(passed ? "Success! Next exercise" : "Try again");
 
       // Persist attempt (best-effort; ignore if unauthenticated)
       try {
+        // Attempt persistence best-effort; ignore aborts
         await fetch("/api/attempts", {
           method: "POST",
           credentials: "include",
@@ -137,6 +166,7 @@ export default function SpeakingPage() {
       } catch (e) {
         // no-op
       }
+      transcribeAbortRef.current = null;
     };
     mr.start();
     mediaRecorderRef.current = mr;
@@ -197,6 +227,10 @@ export default function SpeakingPage() {
                 // Ensure mic/transcriber are fully stopped before playing
                 try { transcriberRef.current?.stop(); } catch {}
                 try { micStream?.getTracks().forEach((t) => t.stop()); } catch {}
+                // Cancel any background transcription and clear UI state
+                try { transcribeAbortRef.current?.abort(); } catch {}
+                transcribeAbortRef.current = null;
+                setTranscribing(false);
                 new Audio(exercise.audio_url).play();
               }}
             >
@@ -230,7 +264,27 @@ export default function SpeakingPage() {
               {liveFinals.length > 0 && (
                 <div className="mb-2 text-slate-700">{liveFinals.join(" ")}</div>
               )}
-              <div className="text-slate-500">{transcribing ? "Transcribing…" : (livePartial || (liveStatus === "unsupported" ? "Live captions not supported in this browser" : liveStatus === "connecting" ? "Connecting…" : liveStatus === "listening" ? "Listening…" : ""))}</div>
+              <div className="flex items-center justify-between gap-3 text-slate-500">
+                <div>
+                  {transcribing
+                    ? "Processing recording…"
+                    : (livePartial || (liveStatus === "unsupported"
+                        ? "Live captions not supported in this browser"
+                        : liveStatus === "connecting"
+                        ? "Connecting…"
+                        : liveStatus === "listening"
+                        ? "Listening…"
+                        : ""))}
+                </div>
+                {transcribing && (
+                  <button
+                    className="text-xs px-2 py-1 rounded ring-1 ring-slate-300 hover:bg-slate-50"
+                    onClick={() => { try { transcribeAbortRef.current?.abort(); } catch {}; transcribeAbortRef.current = null; setTranscribing(false); }}
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
             </div>
             </div>
             <LiveTranscriber

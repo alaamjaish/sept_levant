@@ -26,6 +26,7 @@ const LiveTranscriber = forwardRef<LiveTranscriberHandle, Props>(
     const recognitionRef = useRef<any>(null);
     const [supported, setSupported] = useState<boolean>(true);
     const shouldRestartRef = useRef(false);
+    const activeRef = useRef(false);
 
     useEffect(() => {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -39,7 +40,7 @@ const LiveTranscriber = forwardRef<LiveTranscriberHandle, Props>(
       r.continuous = true;
       r.interimResults = true;
 
-      r.onstart = () => onStatus?.("listening");
+      r.onstart = () => { if (activeRef.current) onStatus?.("listening"); };
       r.onerror = () => onStatus?.("error");
       r.onend = () => {
         // Chrome sometimes ends; restart if still recording
@@ -50,6 +51,7 @@ const LiveTranscriber = forwardRef<LiveTranscriberHandle, Props>(
         }
       };
       r.onresult = (e: any) => {
+        if (!activeRef.current) return;
         let interim = "";
         for (let i = e.resultIndex; i < e.results.length; ++i) {
           const res = e.results[i];
@@ -80,6 +82,7 @@ const LiveTranscriber = forwardRef<LiveTranscriberHandle, Props>(
         try {
           onStatus?.("connecting");
           shouldRestartRef.current = true;
+          activeRef.current = true;
           recognitionRef.current.start();
           return true;
         } catch {
@@ -90,6 +93,7 @@ const LiveTranscriber = forwardRef<LiveTranscriberHandle, Props>(
       stop: () => {
         // Hard stop and do not auto-restart
         shouldRestartRef.current = false;
+        activeRef.current = false;
         try { recognitionRef.current?.abort?.(); } catch {}
         try { recognitionRef.current?.stop?.(); } catch {}
         onStatus?.("idle");
