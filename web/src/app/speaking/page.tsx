@@ -41,6 +41,10 @@ export default function SpeakingPage() {
   const [lastStudentBlob, setLastStudentBlob] = useState<Blob | null>(null);
   const [builderError, setBuilderError] = useState<string>("");
   const [teacherTranscribing, setTeacherTranscribing] = useState(false);
+  // Simple controls
+  const [lastDurationSec, setLastDurationSec] = useState<number | null>(null);
+  const [editingTranscript, setEditingTranscript] = useState(false);
+  const [transcriptDraft, setTranscriptDraft] = useState("");
 
   useEffect(() => {
     fetchExercise();
@@ -68,6 +72,12 @@ export default function SpeakingPage() {
     };
   }, []);
 
+  // Reset simple UI when switching exercise
+  useEffect(() => {
+    setEditingTranscript(false);
+    setTranscriptDraft("");
+  }, [exercise?.id]);
+
   async function fetchExercise() {
     const res = await fetch("/api/exercises/get-one?type=speaking");
     const data = await res.json();
@@ -89,6 +99,7 @@ export default function SpeakingPage() {
     setLastTranscript("");
     setLivePartial("");
     setLiveFinals([]);
+    setLastDurationSec(null);
     // If a background transcription is running, cancel it
     try { transcribeAbortRef.current?.abort(); } catch {}
     transcribeAbortRef.current = null;
@@ -177,11 +188,16 @@ export default function SpeakingPage() {
 
   const stopRecording = useCallback(() => {
     // Stop media recorder and all audio tracks
+    const startedAt = recStartRef.current;
     try { mediaRecorderRef.current?.stop(); } catch {}
     try { mediaRecorderRef.current?.stream.getTracks().forEach((t) => t.stop()); } catch {}
     try { micStream?.getTracks().forEach((t) => t.stop()); } catch {}
     setMicStream(null);
     mediaRecorderRef.current = null;
+    if (startedAt) {
+      const sec = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+      setLastDurationSec(sec);
+    }
     recStartRef.current = null;
     setRecording(false);
     transcriberRef.current?.stop();
@@ -294,12 +310,50 @@ export default function SpeakingPage() {
               onFinal={(t) => setLiveFinals((prev) => (t ? [...prev, t] : prev))}
               onStatus={(s) => setLiveStatus(s)}
             />
-            {lastScore !== null && (
-              <div className="mt-2 text-sm text-slate-600">Score: {lastScore}</div>
-            )}
-            {lastTranscript && (
-              <div className="mt-2 text-sm text-slate-600 break-words">Transcript: {lastTranscript}</div>
-            )}
+            <div className="mt-3 flex flex-col gap-2">
+              {lastScore !== null && (
+                <div className="text-sm text-slate-600">Score: {lastScore}</div>
+              )}
+              {(lastStudentBlob || lastTranscript) && (
+                <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
+                  <div className="flex flex-wrap items-center gap-2 justify-between">
+                    <div className="text-sm text-slate-700">
+                      Last recording: {lastDurationSec !== null ? `${Math.floor(lastDurationSec/60).toString().padStart(2,'0')}:${(lastDurationSec%60).toString().padStart(2,'0')}` : '—'}
+                    </div>
+                    <div className="flex gap-2">
+                      <button className="text-sm px-3 py-1.5 rounded ring-1 ring-slate-300 hover:bg-slate-50" onClick={() => { if (lastStudentBlob) new Audio(URL.createObjectURL(lastStudentBlob)).play(); }}>Play</button>
+                      <button className="text-sm px-3 py-1.5 rounded ring-1 ring-slate-300 hover:bg-slate-50" onClick={() => { setLastStudentBlob(null); setLastTranscript(""); setLastScore(null); setMessage(""); }}>Delete</button>
+                      <button className="text-sm px-3 py-1.5 rounded bg-slate-900 text-white hover:bg-slate-800" onClick={startRecording}>Re-record</button>
+                    </div>
+                  </div>
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="text-sm font-medium text-slate-700">Transcript</div>
+                      {!editingTranscript ? (
+                        <div className="flex gap-2">
+                          <button className="text-xs px-2 py-1 rounded ring-1 ring-slate-300 hover:bg-slate-50" onClick={() => { setEditingTranscript(true); setTranscriptDraft(lastTranscript); }}>Edit</button>
+                          <button className="text-xs px-2 py-1 rounded ring-1 ring-slate-300 hover:bg-slate-50" onClick={() => setLastTranscript("")}>Clear</button>
+                        </div>
+                      ) : null}
+                    </div>
+                    {!editingTranscript ? (
+                      <div className="text-sm text-slate-700 break-words min-h-6">{lastTranscript || ""}</div>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        <textarea className="w-full border border-slate-300 rounded-lg p-2 text-sm" rows={3} value={transcriptDraft} onChange={(e) => setTranscriptDraft(e.target.value)} />
+                        <div className="flex gap-2">
+                          <button className="text-sm px-3 py-1.5 rounded bg-slate-900 text-white hover:bg-slate-800" onClick={() => { setLastTranscript(transcriptDraft); setEditingTranscript(false); }}>Save</button>
+                          <button className="text-sm px-3 py-1.5 rounded ring-1 ring-slate-300 hover:bg-slate-50" onClick={() => { setEditingTranscript(false); setTranscriptDraft(""); }}>Cancel</button>
+                          {role === 'teacher' && (
+                            <button className="text-sm px-3 py-1.5 rounded ring-1 ring-slate-300 hover:bg-slate-50" onClick={() => { setBuilderText((p) => (p ? p + ' ' : '') + (transcriptDraft || lastTranscript)); }}>Apply to Text Box</button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
             {message.startsWith("Success") && (
               <button
                 className="mt-4 px-4 py-2 rounded-lg text-white bg-gradient-to-r from-emerald-600 to-teal-500 shadow-sm hover:shadow-md transition"
@@ -510,6 +564,7 @@ export default function SpeakingPage() {
             )}
           </div>
         )}
+
 
         {role === "teacher" && (
           <div className="bg-white/90 rounded-xl ring-1 ring-slate-900/10 shadow-sm p-6">
