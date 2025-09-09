@@ -20,20 +20,22 @@ type Exercise = {
   arabic_text: string;
   audio_url: string;
   exercise_type: "listening" | "speaking";
+  difficulty_level?: number;
 };
 
-export default function SpeakingStitchPage() {
+export default function SpeakingStitch2Page() {
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [library, setLibrary] = useState<Exercise[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
 
   const [recording, setRecording] = useState(false);
-  const [message, setMessage] = useState<string>("");
   const [score, setScore] = useState<number | null>(null);
+  const [feedbackMessage, setFeedbackMessage] = useState<string>("");
+  const [feedbackDetail, setFeedbackDetail] = useState<string>("");
   const [lastTranscript, setLastTranscript] = useState<string>("");
   const [lastStudentBlob, setLastStudentBlob] = useState<Blob | null>(null);
-  // Last recording duration (not currently displayed)
+  const [attemptCount, setAttemptCount] = useState(0);
 
   const [livePartial, setLivePartial] = useState<string>("");
   const [liveFinals, setLiveFinals] = useState<string[]>([]);
@@ -47,6 +49,7 @@ export default function SpeakingStitchPage() {
   const [micStream, setMicStream] = useState<MediaStream | null>(null);
   const recStartRef = useRef<number | null>(null);
   const transcribeAbortRef = useRef<AbortController | null>(null);
+  const capturedTranscriptionRef = useRef<{finals: string[], partial: string} | null>(null);
 
   const [editing, setEditing] = useState(false);
   const [draftText, setDraftText] = useState("");
@@ -110,6 +113,7 @@ export default function SpeakingStitchPage() {
     setAudioPlaying(false);
     setAudioTime(0);
     setAudioDuration(0);
+    setAttemptCount(0); // Reset attempt counter for new exercise
     const el = audioRef.current;
     if (!el) return;
     try {
@@ -161,12 +165,24 @@ export default function SpeakingStitchPage() {
     } catch {}
   }
 
+  function getDifficultyLabel(level?: number) {
+    const levels = {
+      1: "Warm-up (Most get 80%+)",
+      2: "Standard (Target: 70%)",
+      3: "Challenging (Target: 60%)",
+      4: "Advanced (Even 50% is good!)",
+      5: "LEGENDARY (Can you hit 40%?)"
+    };
+    return levels[level as keyof typeof levels] || "Training Mode";
+  }
+
   const startRecording = useCallback(async () => {
-    setMessage("");
     setScore(null);
+    setFeedbackMessage("");
+    setFeedbackDetail("");
     setLastTranscript("");
     setLastStudentBlob(null);
-    // reset last student duration
+    setAttemptCount(prev => prev + 1);
     setLivePartial("");
     setLiveFinals([]);
     try {
@@ -183,36 +199,54 @@ export default function SpeakingStitchPage() {
     mr.onstop = async () => {
       const blob = new Blob(chunksRef.current, { type: "audio/webm" });
       setLastStudentBlob(blob);
-      // compute duration (optional data)
 
+      // Use the captured transcription from stopRecording
+      const captured = capturedTranscriptionRef.current;
+      console.log("mr.onstop called, captured transcription:", captured);
+
+      // Use the live transcription results instead of speechmatics API
       let transcript = "";
-      try {
-        const base64 = await blobToBase64(blob);
-        const ctrl = new AbortController();
-        transcribeAbortRef.current = ctrl;
-        const tRes = await fetch("/api/speechmatics", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            audioBase64: base64,
-            mimeType: blob.type || "audio/webm",
-          }),
-          signal: ctrl.signal,
-        });
-        const j = await tRes.json();
-        transcript = j?.transcript || "";
-      } catch (e: unknown) {
-        const err = e as { name?: string };
-        if (err?.name === "AbortError") {
-          transcribeAbortRef.current = null;
-          setRecording(false);
-          return;
+      if (captured && captured.finals.length > 0) {
+        transcript = captured.finals.join(" ");
+        console.log("Using captured finals:", transcript);
+      } else if (captured && captured.partial.trim()) {
+        // Use the partial transcript if no finals but we have partial text
+        transcript = captured.partial.trim();
+        console.log("Using captured partial:", transcript);
+      } else {
+        // Fallback to speechmatics only if no live transcription at all
+        console.log("No captured transcription found, using speechmatics fallback");
+        try {
+          const base64 = await blobToBase64(blob);
+          const ctrl = new AbortController();
+          transcribeAbortRef.current = ctrl;
+          const tRes = await fetch("/api/speechmatics", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              audioBase64: base64,
+              mimeType: blob.type || "audio/webm",
+            }),
+            signal: ctrl.signal,
+          });
+          const j = await tRes.json();
+          transcript = j?.transcript || "";
+          console.log("Using speechmatics fallback:", transcript);
+        } catch (e: unknown) {
+          const err = e as { name?: string };
+          if (err?.name === "AbortError") {
+            transcribeAbortRef.current = null;
+            setRecording(false);
+            return;
+          }
         }
       }
 
+      console.log("Final transcript being sent:", transcript);
       setLastTranscript(transcript);
 
-      const sRes = await fetch("/api/check-accuracy", {
+      // Use new enhanced LLM feedback endpoint
+      const sRes = await fetch("/api/check-accuracy-enhanced", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -220,13 +254,15 @@ export default function SpeakingStitchPage() {
           spokenText: transcript,
         }),
       });
-      let sc = 0;
+      let responseData = { score: 0, feedbackMessage: "", feedbackDetail: "" };
       try {
-        sc = (await sRes.json())?.score ?? 0;
+        responseData = await sRes.json();
       } catch {}
-      setScore(sc);
-      const passed = sc >= 90;
-      setMessage(passed ? "Success! Next exercise" : "Try again");
+      
+      setScore(responseData.score || 0);
+      setFeedbackMessage(responseData.feedbackMessage || "");
+      setFeedbackDetail(responseData.feedbackDetail || "");
+      const passed = (responseData.score || 0) >= 60;
 
       try {
         await fetch("/api/attempts", {
@@ -235,7 +271,7 @@ export default function SpeakingStitchPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             exercise_id: exercise?.id,
-            score: sc,
+            score: responseData.score || 0,
             passed,
           }),
         });
@@ -250,6 +286,18 @@ export default function SpeakingStitchPage() {
 
   const stopRecording = useCallback(() => {
     const startedAt = recStartRef.current;
+    
+    // CAPTURE TRANSCRIPTION BEFORE STOPPING ANYTHING
+    const capturedFinals = [...liveFinals];
+    const capturedPartial = livePartial;
+    console.log("Capturing transcription before stop - Finals:", capturedFinals, "Partial:", capturedPartial);
+    
+    // Store in ref so mr.onstop can access it
+    capturedTranscriptionRef.current = {
+      finals: capturedFinals,
+      partial: capturedPartial
+    };
+    
     try {
       mediaRecorderRef.current?.stop();
     } catch {}
@@ -261,11 +309,10 @@ export default function SpeakingStitchPage() {
     } catch {}
     setMicStream(null);
     mediaRecorderRef.current = null;
-    // compute duration (optional)
     recStartRef.current = null;
     setRecording(false);
     transcriberRef.current?.stop();
-  }, [micStream]);
+  }, [micStream, liveFinals, livePartial]);
 
   function timerText(start: number | null) {
     if (!start) return "00:00";
@@ -292,7 +339,7 @@ export default function SpeakingStitchPage() {
                 <path d="M39.475 21.6262C40.358 21.4363 40.6863 21.5589 40.7581 21.5934C40.7876 21.655 40.8547 21.857 40.8082 22.3336C40.7408 23.0255 40.4502 24.0046 39.8572 25.2301C38.6799 27.6631 36.5085 30.6631 33.5858 33.5858C30.6631 36.5085 27.6632 38.6799 25.2301 39.8572C24.0046 40.4502 23.0255 40.7407 22.3336 40.8082C21.8571 40.8547 21.6551 40.7875 21.5934 40.7581C21.5589 40.6863 21.4363 40.358 21.6262 39.475C21.8562 38.4054 22.4689 36.9657 23.5038 35.2817C24.7575 33.2417 26.5497 30.9744 28.7621 28.762C30.9744 26.5497 33.2417 24.7574 35.2817 23.5037C36.9657 22.4689 38.4054 21.8562 39.475 21.6262ZM4.41189 29.2403L18.7597 43.5881C19.8813 44.7097 21.4027 44.9179 22.7217 44.7893C24.0585 44.659 25.5148 44.1631 26.9723 43.4579C29.9052 42.0387 33.2618 39.5667 36.4142 36.4142C39.5667 33.2618 42.0387 29.9052 43.4579 26.9723C44.1631 25.5148 44.659 24.0585 44.7893 22.7217C44.9179 21.4027 44.7097 19.8813 43.5881 18.7597L29.2403 4.41187C27.8527 3.02428 25.8765 3.02573 24.2861 3.36776C22.6081 3.72863 20.7334 4.58419 18.8396 5.74801C16.4978 7.18716 13.9881 9.18353 11.5858 11.5858C9.18354 13.988 7.18717 16.4978 5.74802 18.8396C4.58421 20.7334 3.72865 22.6081 3.36778 24.2861C3.02574 25.8765 3.02429 27.8527 4.41189 29.2403Z" />
               </svg>
             </div>
-            <h2 className="text-xl font-bold tracking-tight">Lingua</h2>
+            <h2 className="text-xl font-bold tracking-tight">Lingua - Enhanced LLM</h2>
           </div>
           <nav className="hidden md:flex items-center gap-8 text-sm">
             <a className="text-white/80 hover:text-white" href="#">Home</a>
@@ -356,6 +403,17 @@ export default function SpeakingStitchPage() {
                   Read the text below and listen to the recording.
                 </p>
               </div>
+
+              {/* Challenge Badge */}
+              <div className="mb-4 flex items-center justify-center">
+                <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#0f1a20] rounded-full border border-[#2b4554]">
+                  <span className="text-white/60 text-sm">Difficulty:</span>
+                  <span className="text-[#0da6f2] font-semibold">
+                    {getDifficultyLabel(exercise.difficulty_level)}
+                  </span>
+                </div>
+              </div>
+
               <div className="bg-[#1a2c38] rounded-lg p-6 flex items-start gap-3">
                 <p
                   className="text-2xl leading-loose text-right flex-1"
@@ -657,7 +715,7 @@ export default function SpeakingStitchPage() {
 
               <div className="w-full min-h-[220px] bg-[#1a2c38] rounded-lg p-5 text-right" dir="rtl" lang="ar">
                 <div className="text-sm text-white/70 mb-2">النسخ المباشر</div>
-                {liveFinals.length > 0 && (
+                {liveFinals.length > 0 && recording && (
                   <div
                     className="mb-3 text-white text-2xl md:text-3xl leading-relaxed"
                     style={{ fontFamily: "var(--font-noto-ar), Noto Sans Arabic, sans-serif" }}
@@ -689,19 +747,65 @@ export default function SpeakingStitchPage() {
                 />
               </div>
 
-              <div className="w-full">
+              {/* Enhanced Challenge Feedback Section */}
+              <div className="w-full mt-6">
                 {score !== null && (
-                  <div className="text-sm">Score: {score}</div>
-                )}
-                {message && (
-                  <div className="mt-3 flex items-center gap-3">
-                    <div>{message}</div>
-                    <button
-                      className="px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500"
-                      onClick={fetchExercise}
-                    >
-                      Next
-                    </button>
+                  <div className="bg-[#1a2c38] rounded-lg p-6 border-2 border-[#2b4554]">
+                    {/* Attempt Counter */}
+                    {attemptCount > 0 && (
+                      <div className="text-center text-sm text-white/50 mb-2">
+                        Attempt #{attemptCount}
+                        {attemptCount >= 10 && " - Your persistence is impressive!"}
+                        {attemptCount >= 5 && attemptCount < 10 && " - Keep pushing!"}
+                      </div>
+                    )}
+
+                    {/* Progress Meter */}
+                    <div className="mb-4">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm text-white/60">Accuracy achieved</span>
+                        <span className="text-2xl font-bold text-white">{score}%</span>
+                      </div>
+                      <div className="h-3 bg-[#0f1a20] rounded-full overflow-hidden">
+                        <div 
+                          className="h-full rounded-full transition-all duration-700 ease-out"
+                          style={{
+                            width: `${score}%`,
+                            backgroundColor: score >= 80 ? '#10b981' : score >= 60 ? '#f59e0b' : '#ef4444'
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Dynamic Feedback Message */}
+                    <div className="text-center py-4">
+                      <div className="text-xl font-semibold mb-2" style={{
+                        color: score >= 80 ? '#10b981' : score >= 60 ? '#f59e0b' : '#ef4444'
+                      }}>
+                        {feedbackMessage}
+                      </div>
+                      <div className="text-white/70 text-sm">
+                        {feedbackDetail}
+                      </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex gap-3 justify-center mt-4">
+                      <button
+                        className="px-6 py-2.5 rounded-md bg-[#0da6f2] hover:bg-[#0a8cd9] font-semibold"
+                        onClick={startRecording}
+                      >
+                        Try Again
+                      </button>
+                      {score >= 60 && (
+                        <button
+                          className="px-6 py-2.5 rounded-md bg-[#223c49] hover:bg-[#2c4c5c] font-semibold"
+                          onClick={fetchExercise}
+                        >
+                          Next Challenge →
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -765,7 +869,7 @@ function IconStop({ className = "w-5 h-5" }: { className?: string }) {
 function IconTrash({ className = "w-5 h-5" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden>
-      <path d="M9 3h6a1 1 0 0 1 1 1v1h4a1 1 0 1 1 0 2h-1l-1 12a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3L4 7H3a1 1 0 1 1 0-2h4V4a1 1 0 0 1 1-1zm2 14a1 1 0 1 0 2 0V9a1 1 0 1 0-2 0v8z" />
+      <path d="M9 3h6a1 1 0 0 1 1v1h4a1 1 0 1 1 0 2h-1l-1 12a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3L4 7H3a1 1 0 1 1 0-2h4V4a1 1 0 0 1 1-1zm2 14a1 1 0 1 0 2 0V9a1 1 0 1 0-2 0v8z" />
     </svg>
   );
 }
@@ -785,4 +889,3 @@ function IconUpload({ className = "w-5 h-5" }: { className?: string }) {
     </svg>
   );
 }
-
