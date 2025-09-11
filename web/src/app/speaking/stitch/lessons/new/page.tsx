@@ -9,6 +9,7 @@ export default function NewSpeakingLessonPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [text, setText] = useState("");
+  const [level, setLevel] = useState<"beginner" | "intermediate" | "advanced">("beginner");
   const [recording, setRecording] = useState(false);
   const chunksRef = useRef<BlobPart[]>([]);
   const mediaRef = useRef<MediaRecorder | null>(null);
@@ -72,7 +73,7 @@ export default function NewSpeakingLessonPage() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ arabic_text: text.trim(), audio_url: pub.publicUrl, exercise_type: "speaking" }),
+        body: JSON.stringify({ arabic_text: text.trim(), audio_url: pub.publicUrl, exercise_type: "speaking", level }),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !(j as any)?.ok) throw new Error(((j as any)?.error) || `Failed ${res.status}`);
@@ -110,6 +111,18 @@ export default function NewSpeakingLessonPage() {
           )}
           {error && <div className="mb-3 text-rose-400 text-sm">{error}</div>}
           <div className="mb-4">
+            <label className="block text-sm text-white/80 mb-1">Level</label>
+            <select
+              className="w-full rounded-md bg-[#0f1a20] border border-[#2b4554] p-2 text-white"
+              value={level}
+              onChange={(e) => setLevel(e.target.value as any)}
+            >
+              <option value="beginner">Beginner</option>
+              <option value="intermediate">Intermediate</option>
+              <option value="advanced">Advanced</option>
+            </select>
+          </div>
+          <div className="mb-4">
             <label className="block text-sm text-white/80 mb-1">Exercise text</label>
             <textarea className="w-full rounded-md bg-[#0f1a20] border border-[#2b4554] p-3 text-white" rows={4} value={text} onChange={(e) => setText(e.target.value)} style={{fontFamily: '"Noto Sans Arabic", sans-serif'}} dir="rtl" lang="ar"/>
           </div>
@@ -130,4 +143,3 @@ export default function NewSpeakingLessonPage() {
     </>
   );
 }
-

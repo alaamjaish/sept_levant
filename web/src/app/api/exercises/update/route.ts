@@ -8,7 +8,7 @@ function isUuid(value: string): boolean {
 }
 
 export async function PATCH(req: NextRequest) {
-  const { id, arabic_text, audio_url } = await req.json();
+  const { id, arabic_text, audio_url, level } = await req.json();
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
   if (!isUuid(id)) {
     return NextResponse.json(
@@ -24,10 +24,14 @@ export async function PATCH(req: NextRequest) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  type ExerciseUpdate = { arabic_text?: string; audio_url?: string };
+  type ExerciseUpdate = { arabic_text?: string; audio_url?: string; level?: string };
   const updates: ExerciseUpdate = {};
   if (typeof arabic_text === "string") updates.arabic_text = arabic_text;
   if (typeof audio_url === "string") updates.audio_url = audio_url;
+  if (typeof level === "string") {
+    const lv = level.toLowerCase();
+    if (["beginner","intermediate","advanced"].includes(lv)) updates.level = lv;
+  }
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });
   }
@@ -45,11 +49,23 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Exercise not found (or no read access)" }, { status: 404 });
   }
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("exercises")
     .update(updates)
     .eq("id", id)
     .select("*");
+
+  if (error && /column/i.test(error.message || "") && /level/i.test(error.message || "")) {
+    // Retry without level field if column is missing
+    const { level: _omit, ...noLevel } = updates as any;
+    const retry = await supabase
+      .from("exercises")
+      .update(noLevel)
+      .eq("id", id)
+      .select("*");
+    data = retry.data as any;
+    error = retry.error as any;
+  }
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   const row = Array.isArray(data) ? data[0] : data;

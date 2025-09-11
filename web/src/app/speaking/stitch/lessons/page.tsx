@@ -9,6 +9,7 @@ type Exercise = {
   audio_url: string;
   exercise_type: "listening" | "speaking";
   created_at?: string;
+  level?: "beginner" | "intermediate" | "advanced";
 };
 
 export default function SpeakingLessonsDashboard() {
@@ -123,4 +124,3 @@ function formatDate(iso?: string) {
     return "";
   }
 }
-

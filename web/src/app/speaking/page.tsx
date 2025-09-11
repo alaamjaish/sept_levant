@@ -8,14 +8,19 @@ type Exercise = {
   arabic_text: string;
   audio_url: string;
   exercise_type: "listening" | "speaking";
+  level?: "beginner" | "intermediate" | "advanced";
 };
 
 export default function SpeakingPage() {
   // Optional: feature flag to send users to the lessons list first
+  // Only redirect when no specific lesson id is present
   useEffect(() => {
-    if (process.env.NEXT_PUBLIC_SPEAKING_INDEX === "lessons") {
-      try { window.location.replace("/speaking/lessons"); } catch { window.location.href = "/speaking/lessons"; }
-    }
+    try {
+      const hasId = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('id');
+      if (!hasId && process.env.NEXT_PUBLIC_SPEAKING_INDEX === "lessons") {
+        try { window.location.replace("/speaking/lessons"); } catch { window.location.href = "/speaking/lessons"; }
+      }
+    } catch {}
   }, []);
   const [role, setRole] = useState<string | null>(null);
   const [library, setLibrary] = useState<Exercise[]>([]);
@@ -48,6 +53,9 @@ export default function SpeakingPage() {
   const [teacherRecording, setTeacherRecording] = useState(false);
   const [replaceSaving, setReplaceSaving] = useState(false);
   const [replaceError, setReplaceError] = useState("");
+  const [levelDraft, setLevelDraft] = useState<"beginner" | "intermediate" | "advanced">("beginner");
+  const [levelSaving, setLevelSaving] = useState(false);
+  const [levelError, setLevelError] = useState("");
 
   // Exercise text edit
   const [editingExercise, setEditingExercise] = useState(false);
@@ -76,7 +84,19 @@ export default function SpeakingPage() {
         // Library
         const lr = await fetch("/api/exercises/list?type=speaking&limit=100", { cache: "no-store" });
         const lj = await lr.json();
-        if (Array.isArray(lj?.items)) setLibrary(lj.items);
+        const items: Exercise[] = Array.isArray(lj?.items) ? lj.items : [];
+        if (items.length) {
+          setLibrary(items);
+          // If a specific lesson id was provided, select it
+          try {
+            const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+            const seedId = params?.get('id');
+            if (seedId) {
+              const chosen = items.find((x) => x.id === seedId) || null;
+              if (chosen) setExercise(chosen);
+            }
+          } catch {}
+        }
       } finally {
         setLoading(false);
       }
@@ -94,6 +114,7 @@ export default function SpeakingPage() {
   // Reset simple UI when switching exercise
   useEffect(() => {
     if (exercise?.arabic_text) setExerciseDraft(exercise.arabic_text);
+    if (exercise?.level) setLevelDraft(exercise.level);
     // reset audio
     setAudioPlaying(false);
     setAudioTime(0);
@@ -222,6 +243,9 @@ export default function SpeakingPage() {
               <div className="flex flex-col bg-[var(--surface-dark)] rounded-xl p-6 gap-4">
                 <div className="flex items-center justify-between">
                   <h2 className="text-lg font-bold">Practice</h2>
+                  {exercise?.level && (
+                    <span className="text-xs px-2 py-1 rounded-md bg-[#0f1a20] border border-[#2b4554] capitalize">{exercise.level}</span>
+                  )}
                 </div>
                 {!editingExercise ? (
                   <div className="relative group">
@@ -270,14 +294,52 @@ export default function SpeakingPage() {
                   </button>
 
                   {(role === "teacher" || role === "admin") && (
-                    <div className="w-full mt-2 p-4 rounded-lg bg-[#0f1a20] border border-[#2b4554]">
-                      <div className="text-xs text-white/80 mb-3">Admin: Audio Controls</div>
-                      <div className="flex flex-col gap-3">
-                        <div className="flex items-center gap-3">
-                          {!teacherRecording ? (
-                            <button className="inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-md ring-1 ring-[#2b4554] hover:bg-[#11222a]" onClick={async () => {
-                              try {
-                                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                  <div className="w-full mt-2 p-4 rounded-lg bg-[#0f1a20] border border-[#2b4554]">
+                    <div className="text-xs text-white/80 mb-3">Admin: Exercise Controls</div>
+                    <div className="flex flex-col gap-3">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-white/80 w-16">Level</span>
+                        <select
+                          className="flex-1 rounded-md bg-[#0f1a20] border border-[#2b4554] p-2 text-white capitalize"
+                          value={levelDraft}
+                          onChange={(e) => setLevelDraft(e.target.value as any)}
+                        >
+                          <option value="beginner">Beginner</option>
+                          <option value="intermediate">Intermediate</option>
+                          <option value="advanced">Advanced</option>
+                        </select>
+                        <button
+                          className="inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-md bg-[var(--accent-blue)] text-white hover:bg-[var(--accent-blue-hover)] disabled:opacity-50"
+                          disabled={levelSaving || !exercise?.id}
+                          onClick={async () => {
+                            if (!exercise?.id) return;
+                            setLevelError(""); setLevelSaving(true);
+                            try {
+                              const res = await fetch('/api/exercises/update', {
+                                method: 'PATCH',
+                                credentials: 'include',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ id: exercise.id, level: levelDraft })
+                              });
+                              const j = await res.json().catch(() => ({} as any));
+                              if (!res.ok || !(j as any)?.ok) throw new Error(((j as any)?.error) || `Failed ${res.status}`);
+                              setExercise(((j as any).exercise) as Exercise);
+                            } catch (e: unknown) {
+                              setLevelError((e as Error)?.message || 'Failed to update level');
+                            } finally {
+                              setLevelSaving(false);
+                            }
+                          }}
+                        >
+                          {levelSaving ? 'Saving…' : 'Save Level'}
+                        </button>
+                      </div>
+                      {levelError && <div className="text-xs text-rose-500">{levelError}</div>}
+                      <div className="flex items-center gap-3">
+                        {!teacherRecording ? (
+                          <button className="inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-md ring-1 ring-[#2b4554] hover:bg-[#11222a]" onClick={async () => {
+                            try {
+                              const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                                 const mr = new MediaRecorder(stream);
                                 teacherChunksRef.current = [];
                                 mr.ondataavailable = (ev) => teacherChunksRef.current.push(ev.data);
@@ -432,7 +494,4 @@ function blobToBase64(blob: Blob): Promise<string> {
     reader.readAsDataURL(blob);
   });
 }
-
-
-
 
