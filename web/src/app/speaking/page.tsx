@@ -196,7 +196,7 @@ export default function SpeakingPage() {
       <div className="flex min-h-screen flex-col bg-[var(--background-dark)] text-[var(--text-primary)]" style={{fontFamily:'"Space Grotesk", "Noto Sans", sans-serif'}}>
         <header className="flex items-center justify-between border-b border-[var(--border-dark)] px-8 py-3">
           <div className="flex items-center gap-3">
-            <a className="text-white/80 hover:text-white text-sm" href="/speaking/stitch/lessons">Lessons</a>
+            <a className="text-white/80 hover:text-white text-sm" href="/speaking/lessons">Lessons</a>
             <span className="text-white/40">/</span>
             <span className="text-white/80 text-sm">Lesson {idx >= 0 ? idx + 1 : "-"} of {library.length || "-"}</span>
           </div>
@@ -426,7 +426,6 @@ function blobToBase64(blob: Blob): Promise<string> {
     reader.readAsDataURL(blob);
   });
 }
-
 
 
 
