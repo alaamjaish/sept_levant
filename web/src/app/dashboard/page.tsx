@@ -30,7 +30,7 @@ export default function DashboardPage() {
           <Link href="/listening" className="px-4 py-2 rounded-lg text-lg text-white bg-gradient-to-r from-indigo-600 to-sky-500 shadow-sm hover:shadow-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500">
             Practice Listening
           </Link>
-          <Link href="/speaking" className="px-4 py-2 rounded-lg text-lg text-white bg-gradient-to-r from-emerald-600 to-teal-500 shadow-sm hover:shadow-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500">
+          <Link href="/speaking/lessons" className="px-4 py-2 rounded-lg text-lg text-white bg-gradient-to-r from-emerald-600 to-teal-500 shadow-sm hover:shadow-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500">
             Practice Speaking
           </Link>
           {role === "teacher" && (
