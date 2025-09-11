@@ -12,7 +12,6 @@ const notoArabic = Noto_Sans_Arabic({
   variable: "--font-noto-ar",
 });
 import LiveTranscriber, { LiveTranscriberHandle } from "@/components/LiveTranscriber";
-import LevelMeter from "@/components/LevelMeter";
 import { supabase } from "@/lib/supabaseClient";
 
 type Exercise = {
@@ -165,16 +164,6 @@ export default function SpeakingStitch2Page() {
     } catch {}
   }
 
-  function getDifficultyLabel(level?: number) {
-    const levels = {
-      1: "Warm-up (Most get 80%+)",
-      2: "Standard (Target: 70%)",
-      3: "Challenging (Target: 60%)",
-      4: "Advanced (Even 50% is good!)",
-      5: "LEGENDARY (Can you hit 40%?)"
-    };
-    return levels[level as keyof typeof levels] || "Training Mode";
-  }
 
   const startRecording = useCallback(async () => {
     setScore(null);
@@ -404,15 +393,6 @@ export default function SpeakingStitch2Page() {
                 </p>
               </div>
 
-              {/* Challenge Badge */}
-              <div className="mb-4 flex items-center justify-center">
-                <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#0f1a20] rounded-full border border-[#2b4554]">
-                  <span className="text-white/60 text-sm">Difficulty:</span>
-                  <span className="text-[#0da6f2] font-semibold">
-                    {getDifficultyLabel(exercise.difficulty_level)}
-                  </span>
-                </div>
-              </div>
 
               <div className="bg-[#1a2c38] rounded-lg p-6 flex items-start gap-3">
                 <p
@@ -701,15 +681,8 @@ export default function SpeakingStitch2Page() {
               </div>
 
               {recording && (
-                <div className="w-full">
-                  <div className="text-xs text-white/70 mb-1 text-center">
-                    Recording {timerText(recStartRef.current)}
-                  </div>
-                  <LevelMeter
-                    stream={micStream}
-                    height={42}
-                    className="w-full ring-1 ring-[#2b4554] rounded-md bg-[#0f1a20]"
-                  />
+                <div className="text-center text-white/70 text-sm">
+                  Recording {timerText(recStartRef.current)}
                 </div>
               )}
 
