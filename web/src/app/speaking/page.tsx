@@ -11,6 +11,12 @@ type Exercise = {
 };
 
 export default function SpeakingPage() {
+  // Optional: feature flag to send users to the lessons list first
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_SPEAKING_INDEX === "lessons") {
+      try { window.location.replace("/speaking/lessons"); } catch { window.location.href = "/speaking/lessons"; }
+    }
+  }, []);
   const [role, setRole] = useState<string | null>(null);
   const [library, setLibrary] = useState<Exercise[]>([]);
   const [exercise, setExercise] = useState<Exercise | null>(null);
@@ -426,7 +432,6 @@ function blobToBase64(blob: Blob): Promise<string> {
     reader.readAsDataURL(blob);
   });
 }
-
 
 
 
