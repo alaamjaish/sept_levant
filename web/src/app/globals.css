@@ -24,3 +24,14 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* App dark theme variables shared across speaking/dashboard views */
+:root {
+  --background-dark: #101d23;
+  --surface-dark: #1a2c38;
+  --border-dark: #223c49;
+  --accent-blue: #0da6f2;
+  --accent-blue-hover: #0a8cd9;
+  --text-primary: #ffffff;
+  --text-secondary: #ffffffb3;
+}

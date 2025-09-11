@@ -32,10 +32,10 @@ export async function GET(req: NextRequest) {
   }
 
   const supabase = createClient(url, anon);
-  // Try selecting with 'level'; if column doesn't exist, fallback gracefully.
+  // Try selecting with 'level', 'title', and 'short_description'; fallback if columns missing.
   const res = await supabase
     .from("exercises")
-    .select("id, arabic_text, audio_url, exercise_type, level")
+    .select("id, arabic_text, audio_url, exercise_type, level, title, short_description, created_at")
     .eq("exercise_type", type)
     .order("created_at", { ascending: false })
     .limit(1);
@@ -43,20 +43,35 @@ export async function GET(req: NextRequest) {
   if (res.error && /column/i.test(res.error.message || "") && /level/i.test(res.error.message || "")) {
     const res2 = await supabase
       .from("exercises")
-      .select("id, arabic_text, audio_url, exercise_type")
+      .select("id, arabic_text, audio_url, exercise_type, created_at")
       .eq("exercise_type", type)
       .order("created_at", { ascending: false })
       .limit(1);
     if (res2.error || !res2.data || res2.data.length === 0) {
       return NextResponse.json({ exercise: stubExercise(type), source: "stub" });
     }
-    return NextResponse.json({ exercise: res2.data[0], source: "db" });
+    return NextResponse.json({ exercise: addTitleFallback(res2.data[0]), source: "db" });
   }
 
   if (res.error || !res.data || res.data.length === 0) {
     return NextResponse.json({ exercise: stubExercise(type), source: "stub" });
   }
 
-  return NextResponse.json({ exercise: res.data[0], source: "db" });
+  return NextResponse.json({ exercise: addTitleFallback(res.data[0]), source: "db" });
+}
+
+function addTitleFallback(row: any) {
+  const title = deriveTitle(row?.title, row?.arabic_text);
+  return { ...row, title };
+}
+
+function deriveTitle(title: any, arabic_text: any): string | null {
+  const t = (typeof title === 'string' && title.trim() !== '') ? title.trim() : '';
+  if (t) return t;
+  const a = (typeof arabic_text === 'string') ? arabic_text.trim() : '';
+  if (!a) return null;
+  const firstSentenceMatch = a.split(/[\.\!\؟\!\?\n\r]/)[0]?.trim() || '';
+  const base = firstSentenceMatch || a;
+  return base.length > 60 ? base.slice(0, 60) : base;
 }
 

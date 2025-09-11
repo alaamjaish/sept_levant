@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { cookies } from "next/headers";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
+import AuthNav from "@/components/AuthNav";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -26,48 +27,24 @@ export default async function RootLayout({
 }>) {
   // Check auth session on the server to render proper nav
   let isSignedIn = false;
+  let email: string | null = null;
   try {
     const supabase = createServerComponentClient({ cookies });
     const {
       data: { session },
     } = await supabase.auth.getSession();
     isSignedIn = !!session;
+    email = session?.user?.email ?? null;
   } catch {}
   return (
     <html lang="en">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <header className="sticky top-0 z-40 w-full border-b border-slate-200/70 bg-white/70 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+        <header data-root-header="true" className="sticky top-0 z-40 w-full border-b border-[#2b4554] bg-[#0f1a20]/90 text-white backdrop-blur supports-[backdrop-filter]:bg-[#0f1a20]/80">
           <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
-            <a href="/" className="font-semibold tracking-tight text-slate-900">
-              LevantTalk
-            </a>
-            <nav className="flex items-center gap-3 text-sm">
-              {isSignedIn ? (
-                <a
-                  href="/dashboard"
-                  className="px-3 py-1.5 rounded-md bg-slate-900 text-white hover:bg-slate-800"
-                >
-                  Dashboard
-                </a>
-              ) : (
-                <>
-                  <a
-                    href="/login"
-                    className="px-3 py-1.5 rounded-md text-slate-700 hover:bg-slate-100"
-                  >
-                    Login
-                  </a>
-                  <a
-                    href="/signup"
-                    className="px-3 py-1.5 rounded-md bg-indigo-600 text-white hover:bg-indigo-500"
-                  >
-                    Sign Up
-                  </a>
-                </>
-              )}
-            </nav>
+            <a href="/" className="font-semibold tracking-tight">LevantTalk</a>
+            <AuthNav isSignedIn={isSignedIn} email={email} />
           </div>
         </header>
         {children}

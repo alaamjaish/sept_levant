@@ -1,53 +1,60 @@
-"use client";
-import Link from "next/link";
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { cookies } from "next/headers";
+import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 
-export default function DashboardPage() {
-  const [email, setEmail] = useState<string | null>(null);
-  const [role, setRole] = useState<string | null>(null);
+type Exercise = {
+  id: string;
+  exercise_type: "listening" | "speaking";
+  level?: "beginner" | "intermediate" | "advanced";
+};
 
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.auth.getUser();
-      setEmail(data.user?.email ?? null);
-      if (data.user) {
-        const { data: prof } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", data.user.id)
-          .single();
-        setRole(prof?.role ?? null);
-      }
-    })();
-  }, []);
+export default async function DashboardPage() {
+  const supabase = createServerComponentClient({ cookies });
+  let isSignedIn = false;
+  let role: string | null = null;
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    isSignedIn = !!session;
+    if (session?.user?.id) {
+      const { data } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", session.user.id)
+        .single();
+      role = (data as any)?.role ?? null;
+    }
+  } catch {}
+
+  async function getCount(t: "speaking" | "listening") {
+    try {
+      const { count } = await supabase
+        .from("exercises")
+        .select("id", { count: "exact", head: true })
+        .eq("exercise_type", t);
+      return count || 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  const speakingCount = await getCount("speaking");
+  const listeningCount = await getCount("listening");
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-indigo-50">
-      <div className="max-w-4xl mx-auto p-8 min-h-screen flex flex-col items-center justify-center">
-        <h1 className="text-2xl font-semibold mb-2 text-slate-900">Welcome{email ? `, ${email}` : ""}</h1>
-        <div className="flex gap-4 mt-6">
-          <Link href="/listening" className="px-4 py-2 rounded-lg text-lg text-white bg-gradient-to-r from-indigo-600 to-sky-500 shadow-sm hover:shadow-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500">
-            Practice Listening
-          </Link>
-          <Link href="/speaking/lessons" className="px-4 py-2 rounded-lg text-lg text-white bg-gradient-to-r from-emerald-600 to-teal-500 shadow-sm hover:shadow-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-500">
-            Practice Speaking
-          </Link>
-          {role === "teacher" && (
-            <Link href="/admin" className="px-4 py-2 rounded-lg text-lg text-white bg-slate-900 hover:bg-slate-800 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-500">
-              Add Content
-            </Link>
+    <main className="min-h-screen bg-[var(--background-dark)] text-[var(--text-primary)]">
+      <div className="mx-auto max-w-4xl px-6 py-16">
+        <div className="text-center mb-10">
+          <h1 className="text-3xl font-extrabold tracking-tight mb-2">Dashboard</h1>
+          <p className="text-[var(--text-secondary)]">Choose what to practice today.</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <a href="/speaking/lessons" className="h-32 rounded-2xl bg-[var(--surface-dark)] border border-[var(--border-dark)] hover:border-[var(--accent-blue)] flex items-center justify-center text-xl font-bold">Practice Speaking</a>
+          <a href="/listening" className="h-32 rounded-2xl bg-[var(--surface-dark)] border border-[var(--border-dark)] hover:border-[var(--accent-blue)] flex items-center justify-center text-xl font-bold">Practice Listening</a>
+          {(role === "teacher" || role === "admin") && (
+            <a href="/speaking/stitch/lessons/new" className="sm:col-span-2 h-32 rounded-2xl bg-[#0b1c25] border border-[var(--border-dark)] hover:border-[var(--accent-blue)] flex items-center justify-center text-xl font-bold">Create Lesson</a>
           )}
         </div>
-        <button
-          className="mt-8 text-sm text-slate-600 underline hover:text-slate-800"
-          onClick={async () => {
-            await supabase.auth.signOut();
-            window.location.href = "/";
-          }}
-        >
-          Sign out
-        </button>
       </div>
     </main>
   );

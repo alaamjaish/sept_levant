@@ -25,11 +25,11 @@ export async function GET(req: NextRequest) {
   }
 
   const supabase = createClient(url, anon);
-  // Try selecting with 'level'; if column doesn't exist, fallback gracefully.
-  async function fetchWithLevel() {
+  // Try selecting with 'level', 'title', and 'short_description'; if any column doesn't exist, fallback gracefully.
+  async function fetchFull() {
     let q = supabase
       .from("exercises")
-      .select("id, arabic_text, audio_url, exercise_type, created_at, level")
+      .select("id, arabic_text, audio_url, exercise_type, created_at, level, title, short_description")
       .eq("exercise_type", type)
       .order("created_at", { ascending: false })
       .limit(limit);
@@ -39,9 +39,9 @@ export async function GET(req: NextRequest) {
     return q;
   }
 
-  const res = await fetchWithLevel();
-  if (res.error && /column/i.test(res.error.message || "") && /level/i.test(res.error.message || "")) {
-    // Fallback without level
+  const res = await fetchFull();
+  if (res.error && /column/i.test(res.error.message || "")) {
+    // Fallback without potentially missing columns (level/title/short_description)
     const { data, error } = await supabase
       .from("exercises")
       .select("id, arabic_text, audio_url, exercise_type, created_at")
@@ -49,9 +49,31 @@ export async function GET(req: NextRequest) {
       .order("created_at", { ascending: false })
       .limit(limit);
     if (error) return NextResponse.json({ items: [], error: error.message }, { status: 200 });
-    return NextResponse.json({ items: data || [], source: "db" });
+    const items = (data || []).map((row: any) => ({
+      ...row,
+      // Provide title fallback on server
+      title: deriveTitle(row.title, row.arabic_text),
+      short_description: row.short_description ?? null,
+    }));
+    return NextResponse.json({ items, source: "db" });
   }
   if (res.error) return NextResponse.json({ items: [], error: res.error.message }, { status: 200 });
-  return NextResponse.json({ items: res.data || [], source: "db" });
+  const items = (res.data || []).map((row: any) => ({
+    ...row,
+    title: deriveTitle(row.title, row.arabic_text),
+    short_description: row.short_description ?? null,
+  }));
+  return NextResponse.json({ items, source: "db" });
+}
+
+function deriveTitle(title: any, arabic_text: any): string | null {
+  const t = (typeof title === 'string' && title.trim() !== '') ? title.trim() : '';
+  if (t) return t;
+  const a = (typeof arabic_text === 'string') ? arabic_text.trim() : '';
+  if (!a) return null;
+  // Take first sentence or first 60 chars
+  const firstSentenceMatch = a.split(/[\.\!\؟\!\?\n\r]/)[0]?.trim() || '';
+  const base = firstSentenceMatch || a;
+  return base.length > 60 ? base.slice(0, 60) : base;
 }
 

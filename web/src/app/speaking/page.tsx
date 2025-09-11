@@ -9,6 +9,8 @@ type Exercise = {
   audio_url: string;
   exercise_type: "listening" | "speaking";
   level?: "beginner" | "intermediate" | "advanced";
+  title?: string | null;
+  short_description?: string | null;
 };
 
 export default function SpeakingPage() {
@@ -56,6 +58,10 @@ export default function SpeakingPage() {
   const [levelDraft, setLevelDraft] = useState<"beginner" | "intermediate" | "advanced">("beginner");
   const [levelSaving, setLevelSaving] = useState(false);
   const [levelError, setLevelError] = useState("");
+  const [titleDraft, setTitleDraft] = useState("");
+  const [descDraft, setDescDraft] = useState("");
+  const [metaSaving, setMetaSaving] = useState(false);
+  const [metaError, setMetaError] = useState("");
 
   // Exercise text edit
   const [editingExercise, setEditingExercise] = useState(false);
@@ -115,6 +121,8 @@ export default function SpeakingPage() {
   useEffect(() => {
     if (exercise?.arabic_text) setExerciseDraft(exercise.arabic_text);
     if (exercise?.level) setLevelDraft(exercise.level);
+    setTitleDraft((exercise?.title || "").slice(0, 60));
+    setDescDraft((exercise?.short_description || "").slice(0, 160));
     // reset audio
     setAudioPlaying(false);
     setAudioTime(0);
@@ -295,10 +303,10 @@ export default function SpeakingPage() {
 
                   {(role === "teacher" || role === "admin") && (
                   <div className="w-full mt-2 p-4 rounded-lg bg-[#0f1a20] border border-[#2b4554]">
-                    <div className="text-xs text-white/80 mb-3">Admin: Exercise Controls</div>
-                    <div className="flex flex-col gap-3">
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs text-white/80 w-16">Level</span>
+                        <div className="text-xs text-white/80 mb-3">Admin: Exercise Controls</div>
+                        <div className="flex flex-col gap-3">
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs text-white/80 w-16">Level</span>
                         <select
                           className="flex-1 rounded-md bg-[#0f1a20] border border-[#2b4554] p-2 text-white capitalize"
                           value={levelDraft}
@@ -333,13 +341,58 @@ export default function SpeakingPage() {
                         >
                           {levelSaving ? 'Saving…' : 'Save Level'}
                         </button>
-                      </div>
-                      {levelError && <div className="text-xs text-rose-500">{levelError}</div>}
-                      <div className="flex items-center gap-3">
-                        {!teacherRecording ? (
-                          <button className="inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-md ring-1 ring-[#2b4554] hover:bg-[#11222a]" onClick={async () => {
-                            try {
-                              const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                          </div>
+                          {levelError && <div className="text-xs text-rose-500">{levelError}</div>}
+                          <div className="grid grid-cols-1 gap-2">
+                            <label className="text-xs text-white/80">Title</label>
+                            <input
+                              className="w-full rounded-md bg-[#0f1a20] border border-[#2b4554] p-2 text-white"
+                              value={titleDraft}
+                              onChange={(e) => setTitleDraft(e.target.value.slice(0, 60))}
+                              placeholder="Short title (max 60 chars)"
+                            />
+                            <label className="text-xs text-white/80 mt-1">Description</label>
+                            <textarea
+                              className="w-full rounded-md bg-[#0f1a20] border border-[#2b4554] p-2 text-white"
+                              rows={2}
+                              value={descDraft}
+                              onChange={(e) => setDescDraft(e.target.value.slice(0, 160))}
+                              placeholder="Short description (max 160 chars)"
+                            />
+                            <div className="flex gap-2">
+                              <button
+                                className="inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-md bg-[var(--accent-blue)] text-white hover:bg-[var(--accent-blue-hover)] disabled:opacity-50"
+                                disabled={metaSaving || !exercise?.id}
+                                onClick={async () => {
+                                  if (!exercise?.id) return;
+                                  setMetaError(""); setMetaSaving(true);
+                                  try {
+                                    const res = await fetch('/api/exercises/update', {
+                                      method: 'PATCH',
+                                      credentials: 'include',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ id: exercise.id, title: titleDraft.trim(), short_description: descDraft.trim() })
+                                    });
+                                    const j = await res.json().catch(() => ({} as any));
+                                    if (!res.ok || !(j as any)?.ok) throw new Error(((j as any)?.error) || `Failed ${res.status}`);
+                                    setExercise(((j as any).exercise) as Exercise);
+                                  } catch (e: unknown) {
+                                    setMetaError((e as Error)?.message || 'Failed to update');
+                                  } finally {
+                                    setMetaSaving(false);
+                                  }
+                                }}
+                              >
+                                {metaSaving ? 'Saving…' : 'Save Title & Description'}
+                              </button>
+                              {metaError && <div className="text-xs text-rose-500">{metaError}</div>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {!teacherRecording ? (
+                              <button className="inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-md ring-1 ring-[#2b4554] hover:bg-[#11222a]" onClick={async () => {
+                                try {
+                                  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                                 const mr = new MediaRecorder(stream);
                                 teacherChunksRef.current = [];
                                 mr.ondataavailable = (ev) => teacherChunksRef.current.push(ev.data);
@@ -494,4 +547,3 @@ function blobToBase64(blob: Blob): Promise<string> {
     reader.readAsDataURL(blob);
   });
 }
-

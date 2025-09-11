@@ -2,12 +2,15 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 export default function NewSpeakingLessonPage() {
   const router = useRouter();
   const [role, setRole] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [title, setTitle] = useState("");
+  const [desc, setDesc] = useState("");
   const [text, setText] = useState("");
   const [level, setLevel] = useState<"beginner" | "intermediate" | "advanced">("beginner");
   const [recording, setRecording] = useState(false);
@@ -57,29 +60,34 @@ export default function NewSpeakingLessonPage() {
 
   async function save() {
     if (!text.trim()) { setError("Please enter the exercise text"); return; }
+    if (!lastBlob) { setError("Please record audio first"); return; }
     setSaving(true);
     setError("");
     try {
-      let blob = lastBlob;
-      if (!blob) throw new Error("Please record audio first");
       const { data: u } = await supabase.auth.getUser();
       const path = `audio/${u?.user?.id || "anon"}/${Date.now()}.webm`;
       const { error: upErr } = await supabase.storage
         .from("audio")
-        .upload(path, blob, { contentType: "audio/webm", upsert: false });
+        .upload(path, lastBlob, { contentType: "audio/webm", upsert: false });
       if (upErr) throw new Error(upErr.message || "Upload failed");
       const { data: pub } = supabase.storage.from("audio").getPublicUrl(path);
       const res = await fetch("/api/exercises/create", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ arabic_text: text.trim(), audio_url: pub.publicUrl, exercise_type: "speaking", level }),
+        body: JSON.stringify({
+          arabic_text: text.trim(),
+          audio_url: pub.publicUrl,
+          exercise_type: "speaking",
+          level,
+          title: title.trim() ? title.trim() : undefined,
+          short_description: desc.trim() ? desc.trim() : undefined,
+        }),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !(j as any)?.ok) throw new Error(((j as any)?.error) || `Failed ${res.status}`);
       const id = (j as any)?.exercise?.id;
-      if (id) router.push(`/speaking/stitch/lesson/${id}`);
-      else router.push(`/speaking/stitch/lessons`);
+      router.push(id ? `/speaking/stitch/lesson/${id}` : "/speaking/stitch/lessons");
     } catch (e: unknown) {
       setError((e as Error)?.message || "Failed to save");
     } finally {
@@ -110,6 +118,7 @@ export default function NewSpeakingLessonPage() {
             <div className="mb-4 text-amber-300 text-sm">You might need teacher/admin role to save.</div>
           )}
           {error && <div className="mb-3 text-rose-400 text-sm">{error}</div>}
+
           <div className="mb-4">
             <label className="block text-sm text-white/80 mb-1">Level</label>
             <select
@@ -122,10 +131,33 @@ export default function NewSpeakingLessonPage() {
               <option value="advanced">Advanced</option>
             </select>
           </div>
+
+          <div className="mb-4">
+            <label className="block text-sm text-white/80 mb-1">Title <span className="text-white/40">(optional)</span></label>
+            <input
+              className="w-full rounded-md bg-[#0f1a20] border border-[#2b4554] p-2 text-white"
+              value={title}
+              onChange={(e) => setTitle(e.target.value.slice(0, 60))}
+              placeholder="Short title (max 60 chars)"
+            />
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm text-white/80 mb-1">Short description <span className="text-white/40">(optional)</span></label>
+            <textarea
+              className="w-full rounded-md bg-[#0f1a20] border border-[#2b4554] p-3 text-white"
+              rows={2}
+              value={desc}
+              onChange={(e) => setDesc(e.target.value.slice(0, 160))}
+              placeholder="One or two lines (max 160 chars)"
+            />
+          </div>
+
           <div className="mb-4">
             <label className="block text-sm text-white/80 mb-1">Exercise text</label>
             <textarea className="w-full rounded-md bg-[#0f1a20] border border-[#2b4554] p-3 text-white" rows={4} value={text} onChange={(e) => setText(e.target.value)} style={{fontFamily: '"Noto Sans Arabic", sans-serif'}} dir="rtl" lang="ar"/>
           </div>
+
           <div className="flex items-center gap-3 mb-4">
             {!recording ? (
               <button className="px-3 py-2 rounded-md bg-[var(--accent-blue)] hover:bg-[var(--accent-blue-hover)]" onClick={startRec}>Record</button>
@@ -135,8 +167,13 @@ export default function NewSpeakingLessonPage() {
             <button className="px-3 py-2 rounded-md ring-1 ring-[#2b4554] hover:bg-[#11222a]" onClick={() => { if (lastBlob) new Audio(URL.createObjectURL(lastBlob)).play(); }} disabled={!lastBlob}>Play</button>
             <button className="px-3 py-2 rounded-md ring-1 ring-[#2b4554] hover:bg-[#11222a]" onClick={() => setLastBlob(null)} disabled={!lastBlob}>Discard</button>
           </div>
-          <button className="px-4 py-2 rounded-md bg-[var(--accent-blue)] hover:bg-[var(--accent-blue-hover)] disabled:opacity-50" disabled={saving || !text.trim() || !lastBlob} onClick={save}>
-            {saving ? "Saving…" : "Save"}
+
+          <button
+            className="px-4 py-2 rounded-md bg-[var(--accent-blue)] hover:bg-[var(--accent-blue-hover)] disabled:opacity-50"
+            disabled={saving || !text.trim() || !lastBlob}
+            onClick={save}
+          >
+            {saving ? "Saving..." : "Save"}
           </button>
         </main>
       </div>

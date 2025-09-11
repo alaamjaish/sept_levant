@@ -8,7 +8,7 @@ function isUuid(value: string): boolean {
 }
 
 export async function PATCH(req: NextRequest) {
-  const { id, arabic_text, audio_url, level } = await req.json();
+  const { id, arabic_text, audio_url, level, title, short_description } = await req.json();
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
   if (!isUuid(id)) {
     return NextResponse.json(
@@ -24,7 +24,7 @@ export async function PATCH(req: NextRequest) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  type ExerciseUpdate = { arabic_text?: string; audio_url?: string; level?: string };
+  type ExerciseUpdate = { arabic_text?: string; audio_url?: string; level?: string; title?: string | null; short_description?: string | null };
   const updates: ExerciseUpdate = {};
   if (typeof arabic_text === "string") updates.arabic_text = arabic_text;
   if (typeof audio_url === "string") updates.audio_url = audio_url;
@@ -32,6 +32,8 @@ export async function PATCH(req: NextRequest) {
     const lv = level.toLowerCase();
     if (["beginner","intermediate","advanced"].includes(lv)) updates.level = lv;
   }
+  if (typeof title === "string") updates.title = title.trim() ? title.trim().slice(0, 60) : null;
+  if (typeof short_description === "string") updates.short_description = short_description.trim() ? short_description.trim().slice(0, 160) : null;
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });
   }
@@ -55,16 +57,19 @@ export async function PATCH(req: NextRequest) {
     .eq("id", id)
     .select("*");
 
-  if (error && /column/i.test(error.message || "") && /level/i.test(error.message || "")) {
-    // Retry without level field if column is missing
-    const { level: _omit, ...noLevel } = updates as any;
-    const retry = await supabase
-      .from("exercises")
-      .update(noLevel)
-      .eq("id", id)
-      .select("*");
-    data = retry.data as any;
-    error = retry.error as any;
+  if (error && /column/i.test(error.message || "")) {
+    // Retry progressively, stripping fields that may not exist yet
+    let u: any = { ...updates };
+    if ('title' in u) delete u.title;
+    if ('short_description' in u) delete u.short_description;
+    const retry1 = await supabase.from("exercises").update(u).eq("id", id).select("*");
+    if (retry1.error && /column/i.test(retry1.error.message || "") && /level/i.test(retry1.error.message || "")) {
+      const { level: _omit, ...noLevel } = u as any;
+      const retry2 = await supabase.from("exercises").update(noLevel).eq("id", id).select("*");
+      data = retry2.data as any; error = retry2.error as any;
+    } else {
+      data = retry1.data as any; error = retry1.error as any;
+    }
   }
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });

@@ -10,12 +10,15 @@ type Exercise = {
   exercise_type: "listening" | "speaking";
   created_at?: string;
   level?: "beginner" | "intermediate" | "advanced";
+  title?: string | null;
+  short_description?: string | null;
 };
 
 export default function SpeakingLessonsIndex() {
   const [role, setRole] = useState<string | null>(null);
-  const [items, setItems] = useState<Exercise[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [isSignedIn, setIsSignedIn] = useState(false);
+  const [allItems, setAllItems] = useState<Exercise[]>([]);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
   const [level, setLevel] = useState<"all" | "beginner" | "intermediate" | "advanced">("all");
 
@@ -23,6 +26,7 @@ export default function SpeakingLessonsIndex() {
     (async () => {
       try {
         const { data } = await supabase.auth.getUser();
+        setIsSignedIn(!!data.user);
         if (data.user) {
           const { data: prof } = await supabase
             .from("profiles")
@@ -36,23 +40,53 @@ export default function SpeakingLessonsIndex() {
   }, []);
 
   useEffect(() => {
+    const ac = new AbortController();
     (async () => {
       setLoading(true);
       setError("");
       try {
-        const q = new URLSearchParams({ type: "speaking", limit: "100" });
-        if (level !== "all") q.set("level", level);
-        const res = await fetch(`/api/exercises/list?${q.toString()}`, { cache: "no-store" });
+        const q = new URLSearchParams({ type: "speaking", limit: "200" });
+        const res = await fetch(`/api/exercises/list?${q.toString()}`, { cache: "no-store", signal: ac.signal as any });
         const j = await res.json();
         if (!res.ok) throw new Error(j?.error || `Failed ${res.status}`);
-        if (Array.isArray(j?.items)) setItems(j.items);
+        if (Array.isArray(j?.items)) setAllItems(j.items);
       } catch (e: unknown) {
-        setError((e as Error)?.message || "Failed to load lessons");
+        if ((e as any)?.name !== 'AbortError') setError((e as Error)?.message || "Failed to load lessons");
       } finally {
         setLoading(false);
       }
     })();
+    return () => ac.abort();
+  }, []);
+
+  // Persist selected level and reflect in URL for shareability (no reload)
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      if (level === "all") {
+        url.searchParams.delete("level");
+      } else {
+        url.searchParams.set("level", level);
+      }
+      window.history.replaceState({}, "", url.toString());
+      localStorage.setItem("speaking_level_filter", level);
+    } catch {}
   }, [level]);
+
+  // Initialize from URL or last choice
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      const fromUrl = (url.searchParams.get("level") || "").toLowerCase();
+      const saved = localStorage.getItem("speaking_level_filter") || "";
+      const valid = ["all","beginner","intermediate","advanced"] as const;
+      const init = (valid as readonly string[]).includes(fromUrl) ? fromUrl : ((valid as readonly string[]).includes(saved) ? saved : "all");
+      setLevel(init as any);
+    } catch {}
+  }, []);
+
+  // Filter locally for instant toggles
+  const items = level === "all" ? allItems : allItems.filter((x) => (x.level || "beginner") === level);
 
   return (
     <>
@@ -69,54 +103,59 @@ export default function SpeakingLessonsIndex() {
       `}</style>
       <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;700;900&family=Noto+Sans+Arabic:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet"/>
       <div className="min-h-screen bg-[var(--background-dark)] text-[var(--text-primary)]" style={{fontFamily: '"Space Grotesk", "Noto Sans", sans-serif'}}>
-        <header className="flex items-center justify-between border-b border-[var(--border-dark)] px-8 py-3">
-          <div className="flex items-center gap-3">
-            <div className="size-6 text-[var(--accent-blue)]">
-              <svg fill="none" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-                <path clipRule="evenodd" d="M39.475 21.6262C40.358 21.4363 40.6863 21.5589 40.7581 21.5934C40.7876 21.655 40.8547 21.857 40.8082 22.3336C40.7408 23.0255 40.4502 24.0046 39.8572 25.2301C38.6799 27.6631 36.5085 30.6631 33.5858 33.5858C30.6631 36.5085 27.6632 38.6799 25.2301 39.8572C24.0046 40.4502 23.0255 40.7407 22.3336 40.8082C21.8571 40.8547 21.6551 40.7875 21.5934 40.7581C21.5589 40.6863 21.4363 40.358 21.6262 39.475C21.8562 38.4054 22.4689 36.9657 23.5038 35.2817C24.7575 33.2417 26.5497 30.9744 28.7621 28.762C30.9744 26.5497 33.2417 24.7574 35.2817 23.5037C36.9657 22.4689 38.4054 21.8562 39.475 21.6262ZM4.41189 29.2403L18.7597 43.5881C19.8813 44.7097 21.4027 44.9179 22.7217 44.7893C24.0585 44.659 25.5148 44.1631 26.9723 43.4579C29.9052 42.0387 33.2618 39.5667 36.4142 36.4142C39.5667 33.2618 42.0387 29.9052 43.4579 26.9723C44.1631 25.5148 44.659 24.0585 44.7893 22.7217C44.9179 21.4027 44.7097 19.8813 43.5881 18.7597L29.2403 4.41187C27.8527 3.02428 25.8765 3.02573 24.2861 3.36776C22.6081 3.72863 20.7334 4.58419 18.8396 5.74801C16.4978 7.18716 13.9881 9.18353 11.5858 11.5858C9.18354 13.988 7.18717 16.4978 5.74802 18.8396C4.58421 20.7334 3.72865 22.6081 3.36778 24.2861C3.02574 25.8765 3.02429 27.8527 4.41189 29.2403Z" fill="currentColor" fillRule="evenodd"></path>
-              </svg>
-            </div>
-            <h2 className="text-xl font-bold leading-tight tracking-[-0.015em]">Lingua</h2>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link href="/speaking" className="text-white/70 hover:text-white text-sm">Classic</Link>
-            {(role === "teacher" || role === "admin") && (
-              <Link href="/speaking/stitch/lessons/new" className="ml-2 px-3 py-1.5 rounded-md bg-[var(--accent-blue)] text-white hover:bg-[var(--accent-blue-hover)] text-sm">Create</Link>
-            )}
-          </div>
-        </header>
         <main className="max-w-5xl mx-auto px-6 py-8">
-          <div className="flex items-center justify-between mb-6">
-            <h1 className="text-2xl font-bold">Speaking Lessons</h1>
-            <div className="flex items-center gap-3">
+          <div className="mb-4">
+            <h1 className="text-2xl font-bold mb-3 text-center">Speaking Lessons</h1>
+            <div className="grid grid-cols-3 items-center">
               <div className="text-white/60 text-sm">{items.length} items</div>
-              <select
-                value={level}
-                onChange={(e) => setLevel(e.target.value as any)}
-                className="bg-[#0f1a20] border border-[#2b4554] text-white text-sm rounded-md px-2 py-1"
-              >
-                <option value="all">All Levels</option>
-                <option value="beginner">Beginner</option>
-                <option value="intermediate">Intermediate</option>
-                <option value="advanced">Advanced</option>
-              </select>
+              <div className="flex items-center justify-center">
+                <div className="flex items-center gap-1 p-1 rounded-xl border border-[#2b4554] bg-[#0f1a20]">
+                  {([
+                    { key: "all", label: "All" },
+                    { key: "beginner", label: "Beginner" },
+                    { key: "intermediate", label: "Intermediate" },
+                    { key: "advanced", label: "Advanced" },
+                  ] as const).map((opt) => {
+                    const active = level === opt.key;
+                    return (
+                      <button
+                        key={opt.key}
+                        onClick={() => setLevel(opt.key)}
+                        className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
+                          active ? "bg-[var(--accent-blue)] text-white" : "text-white/70 hover:text-white hover:bg-[#0b1c25]"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div></div>
             </div>
           </div>
-          {loading && <div className="text-white/70">Loading…</div>}
           {error && <div className="text-rose-400 text-sm mb-4">{error}</div>}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {items.map((e) => (
               <Link
                 key={e.id}
                 href={`/speaking?id=${e.id}`}
-                className="block rounded-lg border border-[var(--border-dark)] bg-[var(--surface-dark)] p-4 hover:border-[var(--accent-blue)] transition-colors"
+                className="block rounded-lg border border-[var(--border-dark)] bg-[var(--surface-dark)] p-4 hover:border-[var(--accent-blue)] transition-colors h-40 sm:h-44 lg:h-48"
               >
-                <div className="text-white text-base mb-2 line-clamp-3" style={{fontFamily: '"Noto Sans Arabic", sans-serif'}} dir="rtl" lang="ar">
-                  {e.arabic_text}
-                </div>
-                <div className="flex items-center justify-between text-xs text-white/60">
-                  <span className="capitalize">{e.level || "beginner"}</span>
-                  <span>{formatDate(e.created_at)}</span>
+                <div className="h-full flex flex-col justify-between">
+                  <div>
+                    <div className="text-white text-base font-semibold mb-1 line-clamp-1">{deriveTitle(e)}</div>
+                    <div className="text-white/70 text-sm mb-2 line-clamp-2 min-h-[2.5rem]">
+                      {e.short_description ? clampDesc(e.short_description) : ''}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-white/60 mt-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-block size-2 rounded-full ${levelDotClass(e.level)}`}></span>
+                      <span className="capitalize">{e.level || 'beginner'}</span>
+                    </div>
+                    <span>{formatDate(e.created_at)}</span>
+                  </div>
                 </div>
               </Link>
             ))}
@@ -139,3 +178,34 @@ function formatDate(iso?: string) {
     return "";
   }
 }
+
+function deriveTitle(e: { title?: string | null; arabic_text: string; id: string }): string {
+  const t = (e.title || "").trim();
+  if (t) return t.length > 60 ? t.slice(0, 60) : t;
+  const a = (e.arabic_text || "").trim();
+  if (!a) return `Lesson ${e.id}`;
+  const first = (a.split(/[\.\!\؟\!\?\n\r]/)[0] || a).trim();
+  const base = first || a;
+  return base.length > 60 ? base.slice(0, 60) : base;
+}
+
+function clampDesc(d?: string | null): string {
+  const s = (d || "").trim();
+  if (!s) return "";
+  return s.length > 160 ? s.slice(0, 160) : s;
+}
+
+function levelDotClass(level?: string) {
+  switch ((level || 'beginner').toLowerCase()) {
+    case 'advanced':
+      return 'bg-rose-400';
+    case 'intermediate':
+      return 'bg-amber-300';
+    default:
+      return 'bg-emerald-300';
+  }
+}
+
+
+
+
