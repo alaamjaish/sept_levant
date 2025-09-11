@@ -6,11 +6,6 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  // Ensure Turbopack selects this folder as the workspace root
-  // when the repository contains multiple lockfiles.
-  turbopack: {
-    root: ".",
-  },
 };
 
 export default nextConfig;
