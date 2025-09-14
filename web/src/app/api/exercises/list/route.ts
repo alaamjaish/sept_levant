@@ -55,6 +55,15 @@ export async function GET(req: NextRequest) {
       title: deriveTitle(row.title, row.arabic_text),
       short_description: row.short_description ?? null,
     }));
+    // Sort by level (default beginner) then newest first
+    items.sort((a: any, b: any) => {
+      const ra = levelRank(a.level);
+      const rb = levelRank(b.level);
+      if (ra !== rb) return ra - rb;
+      const ta = new Date(a.created_at || 0).getTime();
+      const tb = new Date(b.created_at || 0).getTime();
+      return tb - ta;
+    });
     return NextResponse.json({ items, source: "db" });
   }
   if (res.error) return NextResponse.json({ items: [], error: res.error.message }, { status: 200 });
@@ -63,6 +72,15 @@ export async function GET(req: NextRequest) {
     title: deriveTitle(row.title, row.arabic_text),
     short_description: row.short_description ?? null,
   }));
+  // Ensure deterministic order: Beginner -> Intermediate -> Advanced, then newest first
+  items.sort((a: any, b: any) => {
+    const ra = levelRank(a.level);
+    const rb = levelRank(b.level);
+    if (ra !== rb) return ra - rb;
+    const ta = new Date(a.created_at || 0).getTime();
+    const tb = new Date(b.created_at || 0).getTime();
+    return tb - ta;
+  });
   return NextResponse.json({ items, source: "db" });
 }
 
@@ -75,5 +93,18 @@ function deriveTitle(title: any, arabic_text: any): string | null {
   const firstSentenceMatch = a.split(/[\.\!\؟\!\?\n\r]/)[0]?.trim() || '';
   const base = firstSentenceMatch || a;
   return base.length > 60 ? base.slice(0, 60) : base;
+}
+
+function levelRank(level?: string) {
+  switch ((level || "beginner").toLowerCase()) {
+    case "beginner":
+      return 0;
+    case "intermediate":
+      return 1;
+    case "advanced":
+      return 2;
+    default:
+      return 3;
+  }
 }
 

@@ -85,8 +85,26 @@ export default function SpeakingLessonsIndex() {
     } catch {}
   }, []);
 
-  // Filter locally for instant toggles
-  const items = level === "all" ? allItems : allItems.filter((x) => (x.level || "beginner") === level);
+  // Filter + sort locally for instant toggles
+  const items = (() => {
+    const filtered = level === "all" ? allItems : allItems.filter((x) => (x.level || "beginner") === level);
+    const rank = (lvl?: string) => {
+      switch ((lvl || 'beginner').toLowerCase()) {
+        case 'beginner': return 0;
+        case 'intermediate': return 1;
+        case 'advanced': return 2;
+        default: return 3;
+      }
+    };
+    return [...filtered].sort((a, b) => {
+      const ra = rank(a.level);
+      const rb = rank(b.level);
+      if (ra !== rb) return ra - rb;
+      const ta = new Date(a.created_at || 0).getTime();
+      const tb = new Date(b.created_at || 0).getTime();
+      return tb - ta;
+    });
+  })();
 
   return (
     <>
