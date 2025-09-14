@@ -92,13 +92,14 @@ export default function SpeakingExperimentalPage() {
     chunksRef.current = [];
     mr.ondataavailable = (e) => chunksRef.current.push(e.data);
     mr.onstop = async () => {
-      const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+      const inferredType = (chunksRef.current[0] as any)?.type || "audio/webm";
+      const blob = new Blob(chunksRef.current, { type: inferredType });
       let transcript = "";
       try {
         const base64 = await blobToBase64(blob);
         const ctrl = new AbortController();
         transcribeAbortRef.current = ctrl;
-        const tRes = await fetch("/api/speechmatics", {
+        const tRes = await fetch("/api/transcribe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ audioBase64: base64, mimeType: blob.type || "audio/webm" }),

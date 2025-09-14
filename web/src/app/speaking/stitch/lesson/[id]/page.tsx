@@ -146,7 +146,8 @@ export default function SpeakingLessonPage() {
     chunksRef.current = [];
     mr.ondataavailable = (e) => chunksRef.current.push(e.data);
     mr.onstop = async () => {
-      const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+      const inferredType = (chunksRef.current[0] as any)?.type || "audio/webm";
+      const blob = new Blob(chunksRef.current, { type: inferredType });
       const captured = capturedTranscriptionRef.current;
 
       let transcript = "";
@@ -157,7 +158,7 @@ export default function SpeakingLessonPage() {
           const base64 = await blobToBase64(blob);
           const ctrl = new AbortController();
           transcribeAbortRef.current = ctrl;
-          const tRes = await fetch("/api/speechmatics", {
+          const tRes = await fetch("/api/transcribe", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ audioBase64: base64, mimeType: blob.type || "audio/webm" }),
@@ -458,9 +459,10 @@ function AdminAudioControls({ exercise, setExercise, audioRef }: { exercise: Exe
                   try { stream.getTracks().forEach((t) => t.stop()); } catch {}
                   setReplaceSaving(true); setReplaceError("");
                   try {
-                    const blob = new Blob(teacherChunksRef.current, { type: "audio/webm" });
+                    const teacherType = (teacherChunksRef.current[0] as any)?.type || "audio/webm";
+                    const blob = new Blob(teacherChunksRef.current, { type: teacherType });
                     const path = `exercises/${exercise?.id}/${Date.now()}.webm`;
-                    const { error: upErr } = await supabase.storage.from("audio").upload(path, blob, { contentType: "audio/webm", upsert: false });
+                    const { error: upErr } = await supabase.storage.from("audio").upload(path, blob, { contentType: teacherType, upsert: false });
                     if (upErr) throw new Error(upErr.message || "Upload failed");
                     const { data: pub } = supabase.storage.from("audio").getPublicUrl(path);
                     const res = await fetch("/api/exercises/update", { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: exercise?.id, audio_url: pub.publicUrl }) });

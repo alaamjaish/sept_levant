@@ -135,7 +135,8 @@ export default function SpeakingLessonPage() {
     chunksRef.current = [];
     mr.ondataavailable = (e) => chunksRef.current.push(e.data);
     mr.onstop = async () => {
-      const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+      const inferredType = (chunksRef.current[0] as any)?.type || "audio/webm";
+      const blob = new Blob(chunksRef.current, { type: inferredType });
       setTranscribing(true);
       let transcript = "";
       const captured = capturedTranscriptionRef.current;
@@ -148,7 +149,7 @@ export default function SpeakingLessonPage() {
           const base64 = await blobToBase64(blob);
           const ctrl = new AbortController();
           transcribeAbortRef.current = ctrl;
-          const tRes = await fetch("/api/speechmatics", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ audioBase64: base64, mimeType: blob.type || "audio/webm" }), signal: ctrl.signal });
+          const tRes = await fetch("/api/transcribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ audioBase64: base64, mimeType: blob.type || "audio/webm" }), signal: ctrl.signal });
           const data = await tRes.json(); transcript = data?.transcript || "";
         } catch (e: any) {
           if (e?.name === "AbortError") { setTranscribing(false); transcribeAbortRef.current = null; return; }
@@ -339,14 +340,15 @@ export default function SpeakingLessonPage() {
 
                           {exercise?.id && teacherChunksRef.current.length > 0 && (
                             <>
-                              <button className="inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-md ring-1 ring-[#2b4554] hover:bg-[#11222a]" onClick={() => new Audio(URL.createObjectURL(new Blob(teacherChunksRef.current, { type: 'audio/webm' }))).play()}>Play New</button>
+                              <button className="inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-md ring-1 ring-[#2b4554] hover:bg-[#11222a]" onClick={() => { const t = (teacherChunksRef.current[0] as any)?.type || 'audio/webm'; new Audio(URL.createObjectURL(new Blob(teacherChunksRef.current, { type: t }))).play(); }}>Play New</button>
                               <button className="inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-md bg-[var(--accent-blue)] text-white hover:bg-[var(--accent-blue-hover)] disabled:opacity-50" disabled={replaceSaving} onClick={async () => {
                                 setReplaceError(""); setReplaceSaving(true);
                                 try {
-                                  const blob = new Blob(teacherChunksRef.current, { type: 'audio/webm' });
+                                  const t = (teacherChunksRef.current[0] as any)?.type || 'audio/webm';
+                                  const blob = new Blob(teacherChunksRef.current, { type: t });
                                   const { data: u } = await supabase.auth.getUser();
                                   const path = `audio/${u?.user?.id || 'anon'}/${Date.now()}.webm`;
-                                  const { error: upErr } = await supabase.storage.from('audio').upload(path, blob, { contentType: 'audio/webm', upsert: false });
+                                  const { error: upErr } = await supabase.storage.from('audio').upload(path, blob, { contentType: t, upsert: false });
                                   if (upErr) throw new Error(upErr.message || 'Upload failed');
                                   const { data: pub } = supabase.storage.from('audio').getPublicUrl(path);
                                   const res = await fetch('/api/exercises/update', { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: exercise.id, audio_url: pub.publicUrl }) });

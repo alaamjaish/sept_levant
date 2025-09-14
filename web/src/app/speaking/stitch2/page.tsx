@@ -187,7 +187,8 @@ export default function SpeakingStitch2Page() {
     chunksRef.current = [];
     mr.ondataavailable = (e) => chunksRef.current.push(e.data);
     mr.onstop = async () => {
-      const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+      const inferredType = (chunksRef.current[0] as any)?.type || "audio/webm";
+      const blob = new Blob(chunksRef.current, { type: inferredType });
       setLastStudentBlob(blob);
 
       // Use the captured transcription from stopRecording
@@ -210,7 +211,7 @@ export default function SpeakingStitch2Page() {
           const base64 = await blobToBase64(blob);
           const ctrl = new AbortController();
           transcribeAbortRef.current = ctrl;
-          const tRes = await fetch("/api/speechmatics", {
+          const tRes = await fetch("/api/transcribe", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -601,11 +602,12 @@ export default function SpeakingStitch2Page() {
                                   setReplaceSaving(true);
                                   setReplaceError("");
                                   try {
-                                    const blob = new Blob(teacherChunksRef.current, { type: "audio/webm" });
+                                    const teacherType = (teacherChunksRef.current[0] as any)?.type || "audio/webm";
+                                    const blob = new Blob(teacherChunksRef.current, { type: teacherType });
                                     const path = `exercises/${exercise?.id}/${Date.now()}.webm`;
                                     const { error: upErr } = await supabase.storage
                                       .from("audio")
-                                      .upload(path, blob, { contentType: "audio/webm", upsert: false });
+                                      .upload(path, blob, { contentType: teacherType, upsert: false });
                                     if (upErr) throw new Error(upErr.message || "Upload failed");
                                     const { data: pub } = supabase.storage.from("audio").getPublicUrl(path);
                                     const res = await fetch("/api/exercises/update", {

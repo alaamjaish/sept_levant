@@ -42,7 +42,8 @@ export default function NewSpeakingLessonPage() {
       mr.ondataavailable = (e) => chunksRef.current.push(e.data);
       mr.onstop = () => {
         try { s.getTracks().forEach((t) => t.stop()); } catch {}
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        const inferredType = (chunksRef.current[0] as any)?.type || "audio/webm";
+        const blob = new Blob(chunksRef.current, { type: inferredType });
         setLastBlob(blob);
         setRecording(false);
       };
@@ -68,7 +69,7 @@ export default function NewSpeakingLessonPage() {
       const path = `audio/${u?.user?.id || "anon"}/${Date.now()}.webm`;
       const { error: upErr } = await supabase.storage
         .from("audio")
-        .upload(path, lastBlob, { contentType: "audio/webm", upsert: false });
+        .upload(path, lastBlob, { contentType: lastBlob.type || "audio/webm", upsert: false });
       if (upErr) throw new Error(upErr.message || "Upload failed");
       const { data: pub } = supabase.storage.from("audio").getPublicUrl(path);
       const res = await fetch("/api/exercises/create", {
