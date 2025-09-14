@@ -408,7 +408,7 @@ function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-function AdminAudioControls({ exercise, setExercise, audioRef }: { exercise: Exercise; setExercise: (e: Exercise) => void; audioRef: React.RefObject<HTMLAudioElement>; }) {
+function AdminAudioControls({ exercise, setExercise, audioRef }: { exercise: Exercise; setExercise: (e: Exercise) => void; audioRef: React.RefObject<HTMLAudioElement | null>; }) {
   const teacherMediaRef = useRef<MediaRecorder | null>(null);
   const teacherChunksRef = useRef<BlobPart[]>([]);
   const [teacherRecording, setTeacherRecording] = useState(false);
