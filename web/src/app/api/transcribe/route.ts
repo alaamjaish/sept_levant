@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// Soniox (primary) + Speechmatics (fallback) batch transcription aggregator.
+// Soniox batch transcription endpoint (no real-time). Primary and only.
 // Never expose keys to the client; this route runs server-side only.
 
 // Optional: increase timeout on platforms that support it
@@ -13,7 +13,7 @@ type TranscribeBody = {
 };
 
 const SONIOX_BASE = "https://api.soniox.com";
-const SPEECHMATICS_BASE = "https://asr.api.speechmatics.com"; // public cloud v2
+// No fallback in this version
 
 export async function POST(req: NextRequest) {
   let body: TranscribeBody | null = null;
@@ -41,25 +41,14 @@ export async function POST(req: NextRequest) {
 
   const ext = extFromMime(mimeType) || "bin";
 
-  // Try Soniox first
+  // Soniox only
   try {
     const res = await sonioxTranscribe(bytes, ext, language, 25000);
     if (res?.transcript) {
       return NextResponse.json({ transcript: res.transcript.trim(), engine: "soniox", durationMs: res.durationMs });
     }
   } catch (e) {
-    // Fallthrough to fallback
     console.error("Soniox transcription error:", scrubError(e));
-  }
-
-  // Fallback: Speechmatics
-  try {
-    const res = await speechmaticsTranscribe(bytes, ext, language, 30000);
-    if (res?.transcript) {
-      return NextResponse.json({ transcript: res.transcript.trim(), engine: "speechmatics", durationMs: res.durationMs });
-    }
-  } catch (e) {
-    console.error("Speechmatics transcription error:", scrubError(e));
   }
 
   // If both fail, degrade gracefully
@@ -105,7 +94,7 @@ async function sonioxTranscribe(bytes: Buffer, ext: string, language: string, ti
   try {
     // 1) Upload file -> get file id
     const fd = new FormData();
-    fd.append("file", new Blob([bytes]), `audio.${ext}`);
+    fd.append("file", new Blob([new Uint8Array(bytes)]), `audio.${ext}`);
     const fileUpload = await fetch(`${SONIOX_BASE}/v1/files`, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}` },
@@ -176,92 +165,6 @@ async function sonioxTranscribe(bytes: Buffer, ext: string, language: string, ti
   }
 }
 
-async function speechmaticsTranscribe(bytes: Buffer, ext: string, language: string, timeoutMs: number) {
-  const apiKey = process.env.SPEECHMATICS_API_KEY;
-  if (!apiKey) throw Object.assign(new Error("Missing SPEECHMATICS_API_KEY"), { status: 500 });
-
-  const started = Date.now();
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    // Create job (multipart form)
-    const form = new FormData();
-    form.append("data_file", new Blob([bytes]), `audio.${ext}`);
-    const config = {
-      type: "transcription",
-      transcription_config: {
-        language,
-        // operating_point: "enhanced", // optional
-      },
-    };
-    form.append("config", new Blob([JSON.stringify(config)], { type: "application/json" }));
-
-    const create = await fetch(`${SPEECHMATICS_BASE}/v2/jobs/`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      body: form,
-      signal: controller.signal,
-    });
-    if (!create.ok) throw Object.assign(new Error(`Speechmatics create failed ${create.status}`), { status: create.status });
-    const cj: any = await create.json();
-    const jobId = cj?.id || cj?.job?.id;
-    if (!jobId) throw new Error("Speechmatics missing job id");
-
-    // Poll job status
-    let status: string = "";
-    let attempt = 0;
-    while (true) {
-      if (Date.now() - started > timeoutMs - 1000) throw Object.assign(new Error("Speechmatics timeout"), { status: 504 });
-      const g = await fetch(`${SPEECHMATICS_BASE}/v2/jobs/${jobId}/`, {
-        headers: { Authorization: `Bearer ${apiKey}` },
-        signal: controller.signal,
-      });
-      if (!g.ok) throw Object.assign(new Error(`Speechmatics status failed ${g.status}`), { status: g.status });
-      const st: any = await g.json();
-      status = st?.job?.status || st?.status || "";
-      if (["done", "completed"].includes(status)) break;
-      if (["failed", "error"].includes(status)) throw Object.assign(new Error("Speechmatics job failed"), { status: 500 });
-      await sleep(700 + Math.min(1600, attempt * 200));
-      attempt++;
-    }
-
-    // Fetch transcript (plain text if possible, else json)
-    // Try txt first
-    let transcript = "";
-    const txt = await fetch(`${SPEECHMATICS_BASE}/v2/jobs/${jobId}/transcript?format=txt`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-      signal: controller.signal,
-    });
-    if (txt.ok) {
-      transcript = await txt.text();
-    } else {
-      const js = await fetch(`${SPEECHMATICS_BASE}/v2/jobs/${jobId}/transcript`, {
-        headers: { Authorization: `Bearer ${apiKey}` },
-        signal: controller.signal,
-      });
-      if (js.ok) {
-        const jj: any = await js.json();
-        transcript = extractSpeechmaticsText(jj);
-      }
-    }
-
-    const durationMs = Date.now() - started;
-    return { transcript: (transcript || "").trim(), durationMs };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-function extractSpeechmaticsText(j: any): string {
-  try {
-    // Best-effort extraction from a typical SM JSON structure
-    const results = j?.results || j?.channels?.[0]?.alternatives?.[0]?.words;
-    if (Array.isArray(results)) {
-      return results.map((w: any) => w?.name || w?.word || w?.content || "").join(" ");
-    }
-  } catch {}
-  return "";
-}
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));

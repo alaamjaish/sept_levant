@@ -43,7 +43,6 @@ const LiveTranscriber = forwardRef<LiveTranscriberHandle, Props>(
       r.onstart = () => { if (activeRef.current) onStatus?.("listening"); };
       r.onerror = () => onStatus?.("error");
       r.onend = () => {
-        // Chrome sometimes ends; restart if still recording
         if (shouldRestartRef.current) {
           try { r.start(); } catch {}
         } else {
@@ -65,7 +64,6 @@ const LiveTranscriber = forwardRef<LiveTranscriberHandle, Props>(
       recognitionRef.current = r;
 
       return () => {
-        // Ensure we fully stop on unmount
         shouldRestartRef.current = false;
         try { r.stop(); } catch {}
         try { r.abort?.(); } catch {}
@@ -91,7 +89,6 @@ const LiveTranscriber = forwardRef<LiveTranscriberHandle, Props>(
         }
       },
       stop: () => {
-        // Hard stop and do not auto-restart
         shouldRestartRef.current = false;
         activeRef.current = false;
         try { recognitionRef.current?.abort?.(); } catch {}
@@ -99,12 +96,10 @@ const LiveTranscriber = forwardRef<LiveTranscriberHandle, Props>(
         onStatus?.("idle");
         onPartial?.("");
       },
-      reset: () => {
-        onPartial?.("");
-      },
+      reset: () => { onPartial?.(""); },
     }));
 
-    return null; // headless controller; UI handled by parent
+    return null;
   }
 );
 
