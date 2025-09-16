@@ -1,45 +1,32 @@
+import Link from "next/link";
 import { cookies } from "next/headers";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 
-type Exercise = {
-  id: string;
-  exercise_type: "listening" | "speaking";
-  level?: "beginner" | "intermediate" | "advanced";
-};
+import { featureFlags } from "@/lib/featureFlags";
 
 export default async function DashboardPage() {
   const supabase = createServerComponentClient({ cookies });
-  let isSignedIn = false;
+  const flashcardsEnabled = featureFlags.flashcards.enabled;
   let role: string | null = null;
   try {
     const {
       data: { session },
     } = await supabase.auth.getSession();
-    isSignedIn = !!session;
-    if (session?.user?.id) {
+    const userId = session?.user?.id;
+    if (userId) {
       const { data } = await supabase
         .from("profiles")
         .select("role")
-        .eq("id", session.user.id)
-        .single();
-      role = (data as any)?.role ?? null;
+        .eq("id", userId)
+        .maybeSingle();
+      if (data && typeof data === "object" && "role" in data) {
+        const candidate = (data as { role: string | null | undefined }).role;
+        role = typeof candidate === "string" ? candidate : candidate ?? null;
+      }
     }
-  } catch {}
-
-  async function getCount(t: "speaking" | "listening") {
-    try {
-      const { count } = await supabase
-        .from("exercises")
-        .select("id", { count: "exact", head: true })
-        .eq("exercise_type", t);
-      return count || 0;
-    } catch {
-      return 0;
-    }
+  } catch {
+    // ignore profile lookup issues for dashboard chrome
   }
-
-  const speakingCount = await getCount("speaking");
-  const listeningCount = await getCount("listening");
 
   return (
     <main className="min-h-screen bg-[var(--background-dark)] text-[var(--text-primary)]">
@@ -51,6 +38,14 @@ export default async function DashboardPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <a href="/speaking/lessons" className="h-32 rounded-2xl bg-[var(--surface-dark)] border border-[var(--border-dark)] hover:border-[var(--accent-blue)] flex items-center justify-center text-xl font-bold">Practice Speaking</a>
           <a href="/listening" className="h-32 rounded-2xl bg-[var(--surface-dark)] border border-[var(--border-dark)] hover:border-[var(--accent-blue)] flex items-center justify-center text-xl font-bold">Practice Listening</a>
+          {flashcardsEnabled && (
+            <Link
+              href="/flashcards"
+              className="h-32 rounded-2xl bg-[var(--surface-dark)] border border-[var(--border-dark)] hover:border-[var(--accent-blue)] flex items-center justify-center text-xl font-bold"
+            >
+              My Cards
+            </Link>
+          )}
           {(role === "teacher" || role === "admin") && (
             <a href="/speaking/stitch/lessons/new" className="sm:col-span-2 h-32 rounded-2xl bg-[#0b1c25] border border-[var(--border-dark)] hover:border-[var(--accent-blue)] flex items-center justify-center text-xl font-bold">Create Lesson</a>
           )}
