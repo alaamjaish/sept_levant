@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import { featureFlags } from "@/lib/featureFlags";
 
@@ -59,6 +59,9 @@ export default function FlashcardDeckPage({ params }: { params: { deckId: string
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<Message>(null);
   const [flipState, setFlipState] = useState<Record<string, boolean>>({});
+  const [manualFrontText, setManualFrontText] = useState("");
+  const [manualContext, setManualContext] = useState("");
+  const [addingCard, setAddingCard] = useState(false);
 
   const pendingCardIds = useMemo(
     () => cards.filter((card) => card.status === "pending_enrichment").map((card) => card.id),
@@ -88,6 +91,45 @@ export default function FlashcardDeckPage({ params }: { params: { deckId: string
   useEffect(() => {
     fetchDeck();
   }, [fetchDeck]);
+
+  const handleManualAdd = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (!flashcardsEnabled) return;
+      const trimmedFront = manualFrontText.trim();
+      const trimmedContext = manualContext.trim();
+      if (!trimmedFront) {
+        setMessage({ text: "Enter the Arabic word or phrase first.", tone: "error" });
+        return;
+      }
+      setAddingCard(true);
+      setMessage(null);
+      try {
+        const payload: Record<string, unknown> = { text: trimmedFront, deckId };
+        if (trimmedContext) {
+          payload.contextSnippet = trimmedContext;
+        }
+        const res = await fetch("/api/flashcards", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Unable to add card");
+        }
+        setManualFrontText("");
+        setManualContext("");
+        await fetchDeck();
+        setMessage({ text: "Card saved. Details will fill in shortly.", tone: "success" });
+      } catch (err) {
+        setMessage({ text: err instanceof Error ? err.message : "Unable to add card", tone: "error" });
+      } finally {
+        setAddingCard(false);
+      }
+    },
+    [deckId, fetchDeck, flashcardsEnabled, manualContext, manualFrontText]
+  );
 
   useEffect(() => {
     if (!flashcardsEnabled) return;
@@ -198,6 +240,42 @@ export default function FlashcardDeckPage({ params }: { params: { deckId: string
             {message.text}
           </div>
         )}
+
+        <form
+          onSubmit={handleManualAdd}
+          className="flex flex-col gap-3 rounded-xl border border-slate-700/60 bg-slate-900/40 p-4 text-slate-100 shadow-inner"
+        >
+          <label className="flex flex-col gap-2 text-sm">
+            <span className="text-slate-300">Arabic word or phrase</span>
+            <input
+              value={manualFrontText}
+              onChange={(event) => setManualFrontText(event.target.value)}
+              placeholder="e.g. سيارة"
+              className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+              disabled={addingCard}
+            />
+          </label>
+          <label className="flex flex-col gap-2 text-sm">
+            <span className="text-slate-300">Context sentence (optional)</span>
+            <textarea
+              value={manualContext}
+              onChange={(event) => setManualContext(event.target.value)}
+              placeholder="Add a short sentence to help enrichment (optional)"
+              className="min-h-[68px] rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+              disabled={addingCard}
+            />
+          </label>
+          <div className="flex flex-col gap-2 text-xs text-slate-400">
+            <button
+              type="submit"
+              disabled={addingCard}
+              className="self-end rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {addingCard ? "Saving…" : "Add card"}
+            </button>
+            <span>Cards save instantly. Meanings, examples, and audio appear after the background helper finishes.</span>
+          </div>
+        </form>
 
         {loading ? (
           <p className="text-sm text-slate-300">Loading cards…</p>

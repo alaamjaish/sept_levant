@@ -44,6 +44,7 @@ export function FlashcardAddSheet({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [microcopyVisible, setMicrocopyVisible] = useState(false);
+  const [textValue, setTextValue] = useState("");
 
   const displayText = useMemo(() => selectedText.trim(), [selectedText]);
 
@@ -56,8 +57,11 @@ export function FlashcardAddSheet({
       setSaving(false);
       setError(null);
       setMicrocopyVisible(false);
+      setTextValue("");
       return;
     }
+
+    setTextValue(displayText);
 
     let active = true;
     async function loadDecks() {
@@ -104,7 +108,7 @@ export function FlashcardAddSheet({
     return () => {
       active = false;
     };
-  }, [open]);
+  }, [displayText, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -134,7 +138,7 @@ export function FlashcardAddSheet({
         transform: "translateX(-50%)",
       };
 
-  const disableAdd = saving || !displayText;
+  const disableAdd = saving || !textValue.trim();
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -143,8 +147,15 @@ export function FlashcardAddSheet({
     setError(null);
     setMicrocopyVisible(false);
     try {
+      const trimmed = textValue.trim();
+      if (!trimmed) {
+        setError("Enter a word or phrase first.");
+        setSaving(false);
+        return;
+      }
+
       const payload: Record<string, unknown> = {
-        text: displayText,
+        text: trimmed,
       };
       if (contextSnippet) payload.contextSnippet = contextSnippet;
       if (mode === "existing" && selectedDeckId) {
@@ -186,7 +197,7 @@ export function FlashcardAddSheet({
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-base font-semibold text-slate-900">Add to flashcard</h2>
-            <p className="mt-1 text-2xl font-bold text-slate-800">{displayText || "(Select text)"}</p>
+            <p className="mt-1 text-2xl font-bold text-slate-800">{textValue || displayText || "(Enter text)"}</p>
           </div>
           <button
             type="button"
@@ -196,6 +207,18 @@ export function FlashcardAddSheet({
             Cancel
           </button>
         </div>
+
+        <label className="mt-4 block text-sm font-medium text-slate-700">
+          Word or phrase
+          <textarea
+            value={textValue}
+            onChange={(event) => setTextValue(event.target.value)}
+            className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-base text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+            rows={2}
+            placeholder="Type or edit the word you're saving"
+            autoFocus
+          />
+        </label>
 
         <div className="mt-4 space-y-2">
           <p className="text-sm font-medium text-slate-700">Deck</p>

@@ -123,7 +123,8 @@ export default function ListeningPage() {
       setToolbarPosition(null);
       return;
     }
-    const rect = range.getBoundingClientRect();
+    const rectSource = range.getClientRects();
+    const rect = rectSource.length > 0 ? rectSource[0] : range.getBoundingClientRect();
     if (!rect || (rect.width === 0 && rect.height === 0)) {
       setToolbarPosition(null);
       return;
@@ -143,12 +144,25 @@ export default function ListeningPage() {
     setContextSnippet(buildContextSnippet(exercise?.arabic_text ?? "", text));
   }, [exercise?.arabic_text, flashcardsEnabled, sheetOpen]);
 
+  const scheduleSelectionUpdate = useCallback(() => {
+    if (!flashcardsEnabled) return;
+    if (typeof window === "undefined") {
+      handleSelectionUpdate();
+      return;
+    }
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => handleSelectionUpdate());
+    } else {
+      setTimeout(() => handleSelectionUpdate(), 0);
+    }
+  }, [flashcardsEnabled, handleSelectionUpdate]);
+
   useEffect(() => {
     if (!flashcardsEnabled) return;
-    const handler = () => handleSelectionUpdate();
+    const handler = () => scheduleSelectionUpdate();
     document.addEventListener("selectionchange", handler);
     return () => document.removeEventListener("selectionchange", handler);
-  }, [flashcardsEnabled, handleSelectionUpdate]);
+  }, [flashcardsEnabled, scheduleSelectionUpdate]);
 
   useEffect(() => {
     if (!flashcardsEnabled) return;
@@ -229,10 +243,10 @@ export default function ListeningPage() {
             )}
             <div
               ref={textContainerRef}
-              onMouseUp={handleSelectionUpdate}
-              onKeyUp={handleSelectionUpdate}
-              onDoubleClick={handleSelectionUpdate}
-              onTouchEnd={() => setTimeout(handleSelectionUpdate, 0)}
+              onMouseUp={scheduleSelectionUpdate}
+              onKeyUp={scheduleSelectionUpdate}
+              onDoubleClick={scheduleSelectionUpdate}
+              onTouchEnd={() => setTimeout(scheduleSelectionUpdate, 0)}
               tabIndex={flashcardsEnabled ? 0 : -1}
               className="mb-4 text-3xl text-slate-800 focus:outline-none"
             >
