@@ -109,8 +109,9 @@ If unsure, make your best safe guess.`;
   let parsed;
   try {
     parsed = JSON.parse(content);
-  } catch (err) {
-    throw new Error("Failed to parse enrichment JSON");
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "unknown";
+    throw new Error(`Failed to parse enrichment JSON: ${reason}`);
   }
 
   return parsed;

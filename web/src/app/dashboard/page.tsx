@@ -4,46 +4,29 @@ import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 
 import { featureFlags } from "@/lib/featureFlags";
 
-type Exercise = {
-  id: string;
-  exercise_type: "listening" | "speaking";
-  level?: "beginner" | "intermediate" | "advanced";
-};
-
 export default async function DashboardPage() {
   const supabase = createServerComponentClient({ cookies });
   const flashcardsEnabled = featureFlags.flashcards.enabled;
-  let isSignedIn = false;
   let role: string | null = null;
   try {
     const {
       data: { session },
     } = await supabase.auth.getSession();
-    isSignedIn = !!session;
-    if (session?.user?.id) {
+    const userId = session?.user?.id;
+    if (userId) {
       const { data } = await supabase
         .from("profiles")
         .select("role")
-        .eq("id", session.user.id)
-        .single();
-      role = (data as any)?.role ?? null;
+        .eq("id", userId)
+        .maybeSingle();
+      if (data && typeof data === "object" && "role" in data) {
+        const candidate = (data as { role: string | null | undefined }).role;
+        role = typeof candidate === "string" ? candidate : candidate ?? null;
+      }
     }
-  } catch {}
-
-  async function getCount(t: "speaking" | "listening") {
-    try {
-      const { count } = await supabase
-        .from("exercises")
-        .select("id", { count: "exact", head: true })
-        .eq("exercise_type", t);
-      return count || 0;
-    } catch {
-      return 0;
-    }
+  } catch {
+    // ignore profile lookup issues for dashboard chrome
   }
-
-  const speakingCount = await getCount("speaking");
-  const listeningCount = await getCount("listening");
 
   return (
     <main className="min-h-screen bg-[var(--background-dark)] text-[var(--text-primary)]">

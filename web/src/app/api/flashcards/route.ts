@@ -193,7 +193,7 @@ export async function GET(req: NextRequest) {
 }
 
 type EnsureDeckArgs = {
-  supabase: SupabaseClient<any, "public", any>;
+  supabase: SupabaseClient;
   userId: string;
   deckId?: string | null;
   newDeckName?: string | null;
