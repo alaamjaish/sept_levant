@@ -177,6 +177,16 @@ CREATE TABLE IF NOT EXISTS "public"."fc_decks" (
 
 ALTER TABLE "public"."fc_decks" OWNER TO "postgres";
 
+ALTER TABLE "public"."fc_decks"
+    ADD COLUMN IF NOT EXISTS "updated_at" timestamp with time zone DEFAULT "now"();
+
+UPDATE "public"."fc_decks"
+SET "updated_at" = COALESCE("updated_at", "created_at", "now"())
+WHERE "updated_at" IS NULL;
+
+ALTER TABLE "public"."fc_decks"
+    ALTER COLUMN "updated_at" SET DEFAULT "now"();
+
 
 CREATE TABLE IF NOT EXISTS "public"."fc_cards" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
@@ -201,6 +211,42 @@ CREATE TABLE IF NOT EXISTS "public"."fc_cards" (
 
 ALTER TABLE "public"."fc_cards" OWNER TO "postgres";
 
+ALTER TABLE "public"."fc_cards"
+    ADD COLUMN IF NOT EXISTS "language" "text";
+
+ALTER TABLE "public"."fc_cards"
+    ADD COLUMN IF NOT EXISTS "error_reason" "text";
+
+ALTER TABLE "public"."fc_cards"
+    ADD COLUMN IF NOT EXISTS "context_text" "text";
+
+UPDATE "public"."fc_cards"
+SET "language" = COALESCE(NULLIF(TRIM("language"), ''), 'ar')
+WHERE "language" IS NULL OR TRIM("language") = '';
+
+ALTER TABLE "public"."fc_cards"
+    ALTER COLUMN "language" SET DEFAULT 'ar'::"text";
+
+ALTER TABLE "public"."fc_cards"
+    ALTER COLUMN "language" SET NOT NULL;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'fc_cards'
+          AND column_name = 'status'
+          AND udt_name = 'text'
+    ) THEN
+        EXECUTE 'ALTER TABLE public.fc_cards ALTER COLUMN status TYPE public.fc_card_status USING status::public.fc_card_status';
+    END IF;
+END $$;
+
+ALTER TABLE "public"."fc_cards"
+    ALTER COLUMN "status" SET DEFAULT 'pending_enrichment'::"public"."fc_card_status";
+
 
 CREATE TABLE IF NOT EXISTS "public"."fc_jobs" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
@@ -217,6 +263,63 @@ CREATE TABLE IF NOT EXISTS "public"."fc_jobs" (
 
 
 ALTER TABLE "public"."fc_jobs" OWNER TO "postgres";
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'fc_jobs'
+          AND column_name = 'type'
+    )
+    AND NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'fc_jobs'
+          AND column_name = 'job_type'
+    ) THEN
+        EXECUTE 'ALTER TABLE public.fc_jobs RENAME COLUMN type TO job_type';
+    END IF;
+END $$;
+
+ALTER TABLE "public"."fc_jobs"
+    ADD COLUMN IF NOT EXISTS "payload" "jsonb";
+
+ALTER TABLE "public"."fc_jobs"
+    ADD COLUMN IF NOT EXISTS "updated_at" timestamp with time zone DEFAULT "now"();
+
+UPDATE "public"."fc_jobs"
+SET "job_type" = COALESCE(NULLIF(TRIM("job_type"), ''), 'enrich')
+WHERE "job_type" IS NULL OR TRIM("job_type") = '';
+
+ALTER TABLE "public"."fc_jobs"
+    ALTER COLUMN "job_type" SET DEFAULT 'enrich'::"text";
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'fc_jobs'
+          AND column_name = 'status'
+          AND udt_name = 'text'
+    ) THEN
+        EXECUTE 'ALTER TABLE public.fc_jobs ALTER COLUMN status TYPE public.fc_job_status USING status::public.fc_job_status';
+    END IF;
+END $$;
+
+ALTER TABLE "public"."fc_jobs"
+    ALTER COLUMN "status" SET DEFAULT 'queued'::"public"."fc_job_status";
+
+UPDATE "public"."fc_jobs"
+SET "updated_at" = COALESCE("updated_at", "created_at", "now"())
+WHERE "updated_at" IS NULL;
+
+ALTER TABLE "public"."fc_jobs"
+    ALTER COLUMN "updated_at" SET DEFAULT "now"();
 
 
 ALTER TABLE ONLY "public"."attempts"

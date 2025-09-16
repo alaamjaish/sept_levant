@@ -47,6 +47,15 @@ Notes:
 
 Set `NEXT_PUBLIC_FLASHCARDS_ENABLED=true` in your `.env.local` to expose the inline "Add to flashcard" gesture inside lessons.
 
+### Refresh the Supabase schema (important)
+
+If you ran the earlier flashcard SQL, re-run the latest `web/schema.sql` in Supabase SQL Editor. It is idempotent and will:
+
+- Add the new `updated_at`, `language`, and job payload columns the app expects.
+- Migrate the `fc_jobs.type` column to `fc_jobs.job_type` and update enum defaults.
+
+Running the full script again is safe and ensures the deck creation API no longer errors about missing columns.
+
 ### Required environment variables
 
 Add the following to `.env.local` (see `.env.example` for placeholders):
