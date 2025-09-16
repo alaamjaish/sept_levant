@@ -43,3 +43,33 @@ Routes:
 Notes:
 - API routes are stubbed for Speechmatics and scoring. After MVP flow works, replace stubs with real integrations.
 
+## Flashcards (optional feature flag)
+
+Set `NEXT_PUBLIC_FLASHCARDS_ENABLED=true` in your `.env.local` to expose the inline "Add to flashcard" gesture inside lessons.
+
+### Required environment variables
+
+Add the following to `.env.local` (see `.env.example` for placeholders):
+
+```
+NEXT_PUBLIC_FLASHCARDS_ENABLED=true
+FLASHCARD_ENRICH_MODEL=gpt-4.1-mini
+OPENAI_API_KEY=sk-...
+SUPABASE_SERVICE_ROLE_KEY=... # needed by the background worker
+GOOGLE_TTS_API_KEY=...        # Google Cloud Text-to-Speech REST API key
+GOOGLE_TTS_VOICE=ar-XA-Standard-A
+```
+
+### Background enrichment worker
+
+The worker reads queued jobs from `fc_jobs`, calls OpenAI + Google TTS, and updates `fc_cards` with meaning, example, and audio URLs.
+
+Run it anywhere you can provide service-role credentials:
+
+```
+cd supabase/functions/enrich-card
+node index.mjs
+```
+
+The worker processes all queued jobs, exits when none remain, and can be scheduled (e.g., cron) or triggered on demand.
+

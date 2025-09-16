@@ -1,5 +1,8 @@
+import Link from "next/link";
 import { cookies } from "next/headers";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
+
+import { featureFlags } from "@/lib/featureFlags";
 
 type Exercise = {
   id: string;
@@ -9,6 +12,7 @@ type Exercise = {
 
 export default async function DashboardPage() {
   const supabase = createServerComponentClient({ cookies });
+  const flashcardsEnabled = featureFlags.flashcards.enabled;
   let isSignedIn = false;
   let role: string | null = null;
   try {
@@ -51,6 +55,14 @@ export default async function DashboardPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <a href="/speaking/lessons" className="h-32 rounded-2xl bg-[var(--surface-dark)] border border-[var(--border-dark)] hover:border-[var(--accent-blue)] flex items-center justify-center text-xl font-bold">Practice Speaking</a>
           <a href="/listening" className="h-32 rounded-2xl bg-[var(--surface-dark)] border border-[var(--border-dark)] hover:border-[var(--accent-blue)] flex items-center justify-center text-xl font-bold">Practice Listening</a>
+          {flashcardsEnabled && (
+            <Link
+              href="/flashcards"
+              className="h-32 rounded-2xl bg-[var(--surface-dark)] border border-[var(--border-dark)] hover:border-[var(--accent-blue)] flex items-center justify-center text-xl font-bold"
+            >
+              My Cards
+            </Link>
+          )}
           {(role === "teacher" || role === "admin") && (
             <a href="/speaking/stitch/lessons/new" className="sm:col-span-2 h-32 rounded-2xl bg-[#0b1c25] border border-[var(--border-dark)] hover:border-[var(--accent-blue)] flex items-center justify-center text-xl font-bold">Create Lesson</a>
           )}

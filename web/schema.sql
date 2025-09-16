@@ -32,6 +32,27 @@ CREATE TYPE "public"."exercise_level" AS ENUM (
 ALTER TYPE "public"."exercise_level" OWNER TO "postgres";
 
 
+CREATE TYPE "public"."fc_card_status" AS ENUM (
+    'pending_enrichment',
+    'ready',
+    'error_enrichment'
+);
+
+
+ALTER TYPE "public"."fc_card_status" OWNER TO "postgres";
+
+
+CREATE TYPE "public"."fc_job_status" AS ENUM (
+    'queued',
+    'running',
+    'done',
+    'error'
+);
+
+
+ALTER TYPE "public"."fc_job_status" OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."handle_new_user"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     AS $$
@@ -143,6 +164,61 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
 ALTER TABLE "public"."profiles" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."fc_decks" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "name" "text" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "fc_decks_name_check" CHECK ((("name")::"text" <> ''::"text")),
+    CONSTRAINT "fc_decks_pkey" PRIMARY KEY ("id")
+);
+
+
+ALTER TABLE "public"."fc_decks" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."fc_cards" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "deck_id" "uuid" NOT NULL,
+    "front_text" "text" NOT NULL,
+    "back_meaning" "text",
+    "example_text" "text",
+    "tts_word_url" "text",
+    "tts_example_url" "text",
+    "pos" "text",
+    "transliteration" "text",
+    "language" "text" DEFAULT 'ar'::"text" NOT NULL,
+    "status" "public"."fc_card_status" DEFAULT 'pending_enrichment'::"public"."fc_card_status" NOT NULL,
+    "error_reason" "text",
+    "context_text" "text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "fc_cards_pkey" PRIMARY KEY ("id")
+);
+
+
+ALTER TABLE "public"."fc_cards" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."fc_jobs" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "card_id" "uuid" NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "job_type" "text" DEFAULT 'enrich'::"text" NOT NULL,
+    "status" "public"."fc_job_status" DEFAULT 'queued'::"public"."fc_job_status" NOT NULL,
+    "error_reason" "text",
+    "payload" "jsonb",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "updated_at" timestamp with time zone DEFAULT "now"(),
+    CONSTRAINT "fc_jobs_pkey" PRIMARY KEY ("id")
+);
+
+
+ALTER TABLE "public"."fc_jobs" OWNER TO "postgres";
+
+
 ALTER TABLE ONLY "public"."attempts"
     ADD CONSTRAINT "attempts_pkey" PRIMARY KEY ("id");
 
@@ -170,6 +246,22 @@ CREATE INDEX "idx_exercises_type_level_position" ON "public"."exercises" USING "
 
 
 
+CREATE INDEX "idx_fc_cards_user_deck" ON "public"."fc_cards" USING "btree" ("user_id", "deck_id");
+
+
+
+CREATE INDEX "idx_fc_cards_status" ON "public"."fc_cards" USING "btree" ("status");
+
+
+
+CREATE INDEX "idx_fc_decks_user" ON "public"."fc_decks" USING "btree" ("user_id");
+
+
+
+CREATE INDEX "idx_fc_jobs_status" ON "public"."fc_jobs" USING "btree" ("status");
+
+
+
 CREATE OR REPLACE TRIGGER "set_exercise_position_insert" BEFORE INSERT ON "public"."exercises" FOR EACH ROW EXECUTE FUNCTION "public"."set_exercise_position"();
 
 
@@ -190,6 +282,31 @@ ALTER TABLE ONLY "public"."attempts"
 
 ALTER TABLE ONLY "public"."profiles"
     ADD CONSTRAINT "profiles_id_fkey" FOREIGN KEY ("id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."fc_decks"
+    ADD CONSTRAINT "fc_decks_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."fc_cards"
+    ADD CONSTRAINT "fc_cards_deck_id_fkey" FOREIGN KEY ("deck_id") REFERENCES "public"."fc_decks"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."fc_cards"
+    ADD CONSTRAINT "fc_cards_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."fc_jobs"
+    ADD CONSTRAINT "fc_jobs_card_id_fkey" FOREIGN KEY ("card_id") REFERENCES "public"."fc_cards"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."fc_jobs"
+    ADD CONSTRAINT "fc_jobs_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
 
 
 
@@ -218,6 +335,18 @@ CREATE POLICY "insert_own_attempts" ON "public"."attempts" FOR INSERT WITH CHECK
 ALTER TABLE "public"."profiles" ENABLE ROW LEVEL SECURITY;
 
 
+
+ALTER TABLE "public"."fc_decks" ENABLE ROW LEVEL SECURITY;
+
+
+
+ALTER TABLE "public"."fc_cards" ENABLE ROW LEVEL SECURITY;
+
+
+
+ALTER TABLE "public"."fc_jobs" ENABLE ROW LEVEL SECURITY;
+
+
 CREATE POLICY "read_exercises" ON "public"."exercises" FOR SELECT USING (true);
 
 
@@ -227,6 +356,46 @@ CREATE POLICY "read_own_attempts" ON "public"."attempts" FOR SELECT USING (("stu
 
 
 CREATE POLICY "read_own_profile" ON "public"."profiles" FOR SELECT USING (("id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "select_own_fc_decks" ON "public"."fc_decks" FOR SELECT USING (("user_id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "select_own_fc_cards" ON "public"."fc_cards" FOR SELECT USING (("user_id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "select_own_fc_jobs" ON "public"."fc_jobs" FOR SELECT USING (("user_id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "insert_own_fc_decks" ON "public"."fc_decks" FOR INSERT WITH CHECK (("user_id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "insert_own_fc_cards" ON "public"."fc_cards" FOR INSERT WITH CHECK (("user_id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "insert_own_fc_jobs" ON "public"."fc_jobs" FOR INSERT WITH CHECK (("user_id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "update_own_fc_decks" ON "public"."fc_decks" FOR UPDATE USING (("user_id" = "auth"."uid"())) WITH CHECK (("user_id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "update_own_fc_cards" ON "public"."fc_cards" FOR UPDATE USING (("user_id" = "auth"."uid"())) WITH CHECK (("user_id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "delete_own_fc_decks" ON "public"."fc_decks" FOR DELETE USING (("user_id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "delete_own_fc_cards" ON "public"."fc_cards" FOR DELETE USING (("user_id" = "auth"."uid"()));
 
 
 
@@ -278,6 +447,24 @@ GRANT ALL ON TABLE "public"."exercises" TO "service_role";
 GRANT ALL ON TABLE "public"."profiles" TO "anon";
 GRANT ALL ON TABLE "public"."profiles" TO "authenticated";
 GRANT ALL ON TABLE "public"."profiles" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."fc_decks" TO "anon";
+GRANT ALL ON TABLE "public"."fc_decks" TO "authenticated";
+GRANT ALL ON TABLE "public"."fc_decks" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."fc_cards" TO "anon";
+GRANT ALL ON TABLE "public"."fc_cards" TO "authenticated";
+GRANT ALL ON TABLE "public"."fc_cards" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."fc_jobs" TO "anon";
+GRANT ALL ON TABLE "public"."fc_jobs" TO "authenticated";
+GRANT ALL ON TABLE "public"."fc_jobs" TO "service_role";
 
 
 
