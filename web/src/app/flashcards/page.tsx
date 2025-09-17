@@ -98,7 +98,7 @@ export default async function FlashcardSetsPage() {
           </div>
         </header>
 
-        <section className="mt-6 grid flex-1 grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="mt-6 grid flex-1 grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {sets.length === 0 && (
             <div className="col-span-full flex flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--border-dark)] bg-[var(--surface-dark)]/40 px-6 py-16 text-center text-[var(--text-secondary)]">
               <p className="text-lg font-semibold text-[var(--text-primary)]">No sets yet</p>
@@ -112,21 +112,22 @@ export default async function FlashcardSetsPage() {
             <Link
               key={set.id}
               href={`/flashcards/${set.id}`}
-              className="group flex flex-col overflow-hidden rounded-2xl border border-[var(--border-dark)] bg-[var(--surface-dark)] shadow-[0_24px_48px_rgba(0,0,0,0.2)] transition hover:-translate-y-1 hover:shadow-[0_28px_56px_rgba(0,0,0,0.25)]"
+              className="group relative aspect-square w-full max-w-xs mx-auto overflow-hidden rounded-xl border border-[var(--border-dark)] bg-[var(--surface-dark)] shadow-[0_12px_24px_rgba(0,0,0,0.15)] transition-all hover:-translate-y-1 hover:shadow-[0_16px_32px_rgba(0,0,0,0.2)]"
+              style={{ background: gradientFromSeed(set.coverSeed, index) }}
             >
-              <div className="relative aspect-[4/3] w-full" style={{ background: gradientFromSeed(set.coverSeed, index) }}>
-                <div className="absolute inset-0 bg-gradient-to-b from-black/35 to-transparent" />
-                <div className="absolute left-4 top-4 rounded-full bg-black/55 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white">
-                  {formatCardCount(set.cardCount)}
-                </div>
+              <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/20 to-black/60" />
+              <div className="absolute left-3 top-3 rounded-full bg-black/70 px-2.5 py-1 text-xs font-medium uppercase tracking-wide text-white">
+                {formatCardCount(set.cardCount)}
               </div>
-              <div className="flex flex-1 flex-col justify-between px-5 pb-6 pt-5">
-                <div>
-                  <h2 className="text-lg font-semibold">{set.title}</h2>
-                  {set.description && <p className="mt-2 text-sm leading-snug text-[var(--text-secondary)]">{set.description}</p>}
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2 text-xs text-[var(--accent-blue)]">
-                  <span className="rounded-full bg-[var(--accent-blue)]/15 px-3 py-1">Updated recently</span>
+              <div className="absolute bottom-0 left-0 right-0 p-4">
+                <h2 className="text-lg font-bold text-white line-clamp-2">{set.title}</h2>
+                {set.description && (
+                  <p className="mt-1 text-sm text-white/80 line-clamp-1">
+                    {set.description}
+                  </p>
+                )}
+                <div className="mt-2">
+                  <span className="inline-block rounded-full bg-white/20 px-2.5 py-1 text-xs text-white">Updated recently</span>
                 </div>
               </div>
             </Link>
