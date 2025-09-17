@@ -2,11 +2,11 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 
-type RouteContext = {
-  params: { id: string };
-};
-
-export async function PATCH(request: Request, { params }: RouteContext) {
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const resolvedParams = await params;
   const cookieStore = cookies();
   const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
 
@@ -18,7 +18,7 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     return NextResponse.json({ error: "not_authenticated" }, { status: 401 });
   }
 
-  if (!params.id) {
+  if (!resolvedParams.id) {
     return NextResponse.json({ error: "missing_set_id" }, { status: 422 });
   }
 
@@ -51,7 +51,7 @@ export async function PATCH(request: Request, { params }: RouteContext) {
   const { data: exists, error: readError } = await supabase
     .from("flashcard_sets")
     .select("id")
-    .eq("id", params.id)
+    .eq("id", resolvedParams.id)
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -66,7 +66,7 @@ export async function PATCH(request: Request, { params }: RouteContext) {
   const { data, error } = await supabase
     .from("flashcard_sets")
     .update(updates)
-    .eq("id", params.id)
+    .eq("id", resolvedParams.id)
     .eq("user_id", user.id)
     .select("id,title,description,cover_seed,created_at")
     .single();

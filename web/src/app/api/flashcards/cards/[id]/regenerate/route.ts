@@ -80,11 +80,11 @@ async function generateCard(term: string, detectedLanguage: DetectedLanguage): P
   };
 }
 
-type RouteContext = {
-  params: { id: string };
-};
-
-export async function POST(_request: Request, { params }: RouteContext) {
+export async function POST(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const resolvedParams = await params;
   const cookieStore = cookies();
   const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
 
@@ -96,14 +96,14 @@ export async function POST(_request: Request, { params }: RouteContext) {
     return NextResponse.json({ error: "not_authenticated" }, { status: 401 });
   }
 
-  if (!params.id) {
+  if (!resolvedParams.id) {
     return NextResponse.json({ error: "missing_card_id" }, { status: 422 });
   }
 
   const { data: cardRow, error: cardError } = await supabase
     .from("flashcards")
     .select("id,set_id,user_id,input_text,input_language")
-    .eq("id", params.id)
+    .eq("id", resolvedParams.id)
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -138,7 +138,7 @@ export async function POST(_request: Request, { params }: RouteContext) {
         example_en: generated.example_en,
         input_language: normalizedLanguage,
       })
-      .eq("id", params.id)
+      .eq("id", resolvedParams.id)
       .eq("user_id", user.id)
       .select("id, front_ar, back_en, example_ar, example_en, created_at")
       .single();
