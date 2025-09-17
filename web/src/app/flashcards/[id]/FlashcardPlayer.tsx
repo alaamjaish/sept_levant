@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { Flashcard, FlashcardSet } from "@/data/flashcards";
 
@@ -12,80 +12,111 @@ type FlashcardPlayerProps = {
 export function FlashcardPlayer({ set, cards }: FlashcardPlayerProps) {
   const [index, setIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
-  const cardButtonId = "flashcard-button";
 
-  const currentCard = cards[index];
+  const cardButtonRef = useRef<HTMLButtonElement | null>(null);
+  const focusFrameRef = useRef<number | null>(null);
+  const ignoreClickRef = useRef(false);
+
   const totalCount = cards.length;
+  const currentCard = cards[index];
   const progressLabel = totalCount ? `${index + 1}/${totalCount}` : "0/0";
 
-  const focusCard = useCallback(() => {
-    const button = document.getElementById(cardButtonId) as HTMLButtonElement | null;
-    button?.focus();
+  // Focus helper (next animation frame so it happens after re-render)
+  const focusCardNextFrame = useCallback(() => {
+    if (focusFrameRef.current != null) cancelAnimationFrame(focusFrameRef.current);
+    focusFrameRef.current = requestAnimationFrame(() => {
+      cardButtonRef.current?.focus({ preventScroll: true });
+    });
   }, []);
 
   useEffect(() => {
-    focusCard();
-  }, [focusCard]);
-
-  useEffect(() => {
-    focusCard();
-  }, [index, focusCard]);
-
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     return () => {
-      document.body.style.overflow = previousOverflow;
+      if (focusFrameRef.current != null) cancelAnimationFrame(focusFrameRef.current);
     };
   }, []);
 
+  // Lock page scroll while in a set + jump to top
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0 });
+    const prevBody = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    focusCardNextFrame();
+    return () => {
+      document.body.style.overflow = prevBody;
+      document.documentElement.style.overflow = prevHtml;
+    };
+  }, [focusCardNextFrame]);
+
+  // Wrap index if needed
+  useEffect(() => {
+    if (index >= totalCount && totalCount > 0) {
+      setIndex(0);
+      setIsFlipped(false);
+    }
+  }, [index, totalCount]);
+
   const handleFlip = useCallback(() => {
-    if (!currentCard) return;
+    if (!totalCount) return;
     setIsFlipped((prev) => !prev);
-  }, [currentCard]);
+    focusCardNextFrame();
+  }, [totalCount, focusCardNextFrame]);
 
   const goTo = useCallback(
     (direction: "next" | "prev") => {
-      if (!cards.length) return;
-      setIndex((prev) => {
-        if (direction === "next") {
-          return (prev + 1) % cards.length;
-        }
-        return (prev - 1 + cards.length) % cards.length;
-      });
+      if (!totalCount) return;
+      setIndex((prev) => (direction === "next" ? (prev + 1) % totalCount : (prev - 1 + totalCount) % totalCount));
       setIsFlipped(false);
+      focusCardNextFrame();
     },
-    [cards.length]
+    [totalCount, focusCardNextFrame]
   );
 
+  // Global keyboard shortcuts (capture so Space fires before focused buttons consume it)
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) {
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target && target.getAttribute("contenteditable") === "true")
+      ) {
         return;
       }
 
-      if (event.code === "Space") {
+      const isSpace =
+        event.code === "Space" || event.key === " " || event.key === "Spacebar";
+
+      if (isSpace) {
+        // Avoid the implicit "click" that browsers fire on keyup for focused buttons
         event.preventDefault();
+        ignoreClickRef.current = true;
         handleFlip();
-      } else if (event.code === "ArrowRight") {
+        return;
+      }
+      if (event.code === "ArrowRight") {
         event.preventDefault();
         goTo("next");
-      } else if (event.code === "ArrowLeft") {
+        return;
+      }
+      if (event.code === "ArrowLeft") {
         event.preventDefault();
         goTo("prev");
+        return;
       }
     };
 
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
+    document.addEventListener("keydown", handleKey, { capture: true });
+    return () => document.removeEventListener("keydown", handleKey, { capture: true } as any);
   }, [handleFlip, goTo]);
 
   return (
     <div className="flex w-full flex-1 flex-col items-center gap-8">
       <header className="flex w-full items-center justify-between text-sm text-[var(--text-secondary)]">
         <Link href="/flashcards" className="inline-flex items-center gap-2 text-[var(--accent-blue)] hover:underline">
-          <span aria-hidden>←</span>
+          <span aria-hidden="true">&larr;</span>
           Exit
         </Link>
         <div className="text-base font-semibold text-[var(--text-primary)]">{set.title}</div>
@@ -94,16 +125,21 @@ export function FlashcardPlayer({ set, cards }: FlashcardPlayerProps) {
 
       <div className="w-full max-w-2xl">
         <button
-          id={cardButtonId}
+          ref={cardButtonRef}
           type="button"
-          onClick={handleFlip}
-          onKeyDown={(event) => {
-            if (event.code === "Space") {
-              event.preventDefault();
-              handleFlip();
+          onClick={(e) => {
+            // If Space triggered a synthetic click on keyup, swallow it
+            if (ignoreClickRef.current) {
+              ignoreClickRef.current = false;
+              e.preventDefault();
+              e.stopPropagation();
+              return;
             }
+            handleFlip(); // real mouse/touch click
           }}
-          className="relative flex w-full flex-col items-center justify-center overflow-hidden rounded-3xl border border-[var(--border-dark)] bg-[var(--surface-dark)] px-10 py-16 text-center transition hover:border-[var(--accent-blue)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent-blue)]"
+          className="relative flex w-full flex-col items-center justify-center overflow-hidden rounded-3xl border border-[var(--border-dark)]
+                     bg-[var(--surface-dark)] px-10 py-16 text-center transition hover:border-[var(--accent-blue)]
+                     focus:outline-none focus-visible:outline-none"
           aria-pressed={isFlipped}
         >
           {currentCard ? (
@@ -123,7 +159,8 @@ export function FlashcardPlayer({ set, cards }: FlashcardPlayerProps) {
                   </div>
                   <button
                     type="button"
-                    className="mt-2 inline-flex items-center gap-2 rounded-full border border-[var(--accent-blue)] px-4 py-2 text-xs font-semibold text-[var(--accent-blue)] transition hover:bg-[var(--accent-blue)]/10"
+                    className="mt-2 inline-flex items-center gap-2 rounded-full border border-[var(--accent-blue)] px-4 py-2 text-xs font-semibold
+                               text-[var(--accent-blue)] transition hover:bg-[var(--accent-blue)]/10"
                   >
                     Regenerate sentence
                   </button>
@@ -142,15 +179,19 @@ export function FlashcardPlayer({ set, cards }: FlashcardPlayerProps) {
       <div className="flex items-center gap-4 text-sm text-[var(--text-secondary)]">
         <button
           type="button"
+          onMouseDown={(e) => e.preventDefault()} // keep focus on card while clicking
           onClick={() => goTo("prev")}
           className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 transition hover:bg-white/20"
           aria-label="Previous card"
         >
           <span aria-hidden="true">&lt;</span>
         </button>
+
         <span>{progressLabel}</span>
+
         <button
           type="button"
+          onMouseDown={(e) => e.preventDefault()} // keep focus on card while clicking
           onClick={() => goTo("next")}
           className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 transition hover:bg-white/20"
           aria-label="Next card"
