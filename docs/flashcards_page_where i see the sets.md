@@ -179,3 +179,207 @@
 </main>
 </div>
 </body></html>
+
+
+
+Page layout spec (color-blind, no header)
+1) Page container
+
+Vertical page with a scrollable main area.
+
+Global horizontal padding: 40px on desktop, 24px on tablets, 16px on phones.
+
+Max content width: 1280px; content centered.
+
+2) Title + primary CTA block
+
+Center-aligned stack.
+
+Title: “My Flashcard Sets”
+
+Font size: ~30–32px, bold.
+
+Bottom margin: 16px.
+
+Primary button: “New Set”
+
+Placement: centered under the title.
+
+Height: 40px.
+
+Horizontal padding: 16px (icon + label fit comfortably).
+
+Border radius: 8px.
+
+Layout: leading icon (20px) then text label, 8px gap between icon and text.
+
+Font: 14px, bold.
+
+Click/tap target: ≥44×44px.
+
+Block spacing below CTA: 32px on desktop, 24px on mobile.
+
+3) Search bar block
+
+Max width: 480px (tight column), centered.
+
+Input height: 40px.
+
+Left inline icon (search) inside the input:
+
+Icon container width: 40px; icon vertically centered.
+
+Text padding-left: 40px to clear the icon.
+
+Right padding: 16px.
+
+Border: 1px, subtle radius 8px.
+
+Font size: 14px.
+
+Placeholder text present.
+
+Spacing below search: 32px.
+
+4) Flashcard set grid
+
+Responsive grid with equal-width cards and consistent gaps.
+
+Gap between items: 24px (all breakpoints).
+
+Column count by breakpoint:
+
+Phones: 1 col
+
+Small tablets (≥640px): 2 cols
+
+Medium (≥768px): 3 cols
+
+Large (≥1024px): 4 cols
+
+Cards auto-wrap to next row.
+
+Card anatomy (each grid item)
+
+Overall
+
+Interactive card with light border, soft radius 8px, small shadow.
+
+Hover/Focus state: slight elevation and upward shift ~4px.
+
+Structure: vertical flex layout, stretches to equal height with siblings.
+
+Top media area
+
+Aspect ratio: 16:9 (fixed “cover”).
+
+Image fills the area (no distortion); corners follow top radius.
+
+Subtle translucent overlay over media to ensure legibility for labels.
+
+Badge: bottom-left over the media: "NN Cards"
+
+Position: 8px from left and bottom.
+
+Text size: 12px.
+
+Internal padding: 4px 8px.
+
+Pill/rounded shape (radius ~999px or 12px).
+
+Body content
+
+Padding: 16px on all sides.
+
+Title: ~18px, bold; single or two lines max.
+
+Description: 14px; placed under title with 8px top margin.
+
+Flexible filler: description grows to fill remaining vertical space (so the overlay can center properly).
+
+Hover overlay actions
+
+Overlay layer covers the full card area (including media and body) when the card is hovered/focused.
+
+Overlay content is centered both vertically and horizontally.
+
+Two action buttons:
+
+View
+
+Add
+
+Button group gap: 16px.
+
+Each button:
+
+Height: 36–40px.
+
+Horizontal padding: 16px.
+
+Border radius: 8px.
+
+Font: 14px, semibold.
+
+Leading icon (16px) with 8px gap before the label.
+
+Hierarchy: “Add” appears as primary; “View” as secondary (visual treatment up to your theme).
+
+5) Interaction & behavior
+
+Title/CTA/Search are centered; grid below scrolls as content grows.
+
+Search filters the set list (client or server; not specified by layout).
+
+Card hover overlay: appears on hover (pointer devices) and on focus/activation (keyboard), then:
+
+View opens the set detail.
+
+Add triggers adding/attaching or quick action (per your app logic).
+
+Card itself may be clickable to “View” (optional); if so, ensure button clicks don’t trigger the card click (stop propagation).
+
+Keyboard support:
+
+Tab order: Search → New Set → first card (View → Add), then next card, etc.
+
+Overlay actions reachable by Tab when a card is focused.
+
+6) Spacing summary (desktop defaults)
+
+Page side padding: 40px (→ 24px tablet → 16px phone).
+
+Title → CTA: 16px.
+
+CTA → Search: 32px.
+
+Search → Grid: 32px.
+
+Grid row/column gap: 24px.
+
+Card body internal padding: 16px.
+
+Title → description in card: 8px.
+
+Badge offset (media): 8px from edges.
+
+Hover button gap: 16px.
+
+7) Empty state (when no sets)
+
+Replace grid with a centered empty-state:
+
+Short headline (18–20px), one-line explanation (14px).
+
+Primary button “Create your first set” matching the sizes above.
+
+8) Performance/accessibility notes
+
+Images lazy-load within media areas.
+
+All interactive elements meet ≥44×44px.
+
+Provide ARIA labels for “View set” and “Add”.
+
+Ensure focus ring/outline is visible (theme decides style).
+

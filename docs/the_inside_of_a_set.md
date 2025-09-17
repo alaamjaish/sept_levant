@@ -108,3 +108,103 @@
 </div>
 
 </body></html>
+
+
+
+Visual layout spec (plain English)
+1) Page frame
+
+Single-page layout with a top header and a centered main stage beneath it.
+
+Content width is constrained; the main column is centered on large screens and uses standard page padding on small screens.
+
+
+1) Main content column
+
+A single centered column limited to a comfortable reading width.
+
+Vertical spacing around all items is generous so each block is visually distinct.
+
+3.1 Back/Exit control
+
+At the very top of the main column, aligned to the left, there’s a small back arrow with the label “Exit”.
+
+Acts as a breadcrumb-style way to leave the study session.
+
+3.2 Progress indicator
+
+Below the Exit link, a small progress text shows the current position within the deck, e.g., “1/10”.
+
+3.3 Flashcard stage
+
+A card container centered in the column, with a fixed 3:2 aspect ratio.
+
+The card supports a flip interaction (3D rotation) and fills most of the container area with even padding.
+
+Front face (default view):
+
+A single, very large Arabic word centered both vertically and horizontally.
+
+Back face (on flip):
+
+A prominent English translation at the top, centered.
+
+Beneath it, a two-line example block centered:
+
+First line: the Arabic example sentence.
+
+Second line: the English gloss/translation of that sentence.
+
+Flip interactions:
+
+Click/tap the card to flip.
+
+Press the spacebar to flip.
+
+A small hint text below the card explains the flip controls (“Click card or press spacebar to flip”).
+
+3.4 Card navigation controls
+
+Beneath the hint, a left circular button (previous) and a right circular button (next).
+
+These are laid out horizontally and spaced to opposite sides so they frame the width of the main column.
+
+3.5 Primary action
+
+Below the navigation, a primary action button labeled “Add a new card” is centered.
+
+Button includes a leading plus icon and uses bold text.
+
+4) Responsive behavior
+
+On small screens, the header nav menu hides, leaving only logo/title on the left and the actions (bell + avatar) on the right.
+
+The main column remains centered; the flashcard keeps its 3:2 aspect ratio and scales down to fit the available width.
+
+Large text on the card scales down appropriately so the word remains the focal point without wrapping.
+
+5) Interaction summary
+
+Card flip: click/tap or press spacebar toggles front/back faces.
+
+Prev/Next: circular arrow buttons move to the previous/next card.
+
+Exit: top-left back arrow returns to the deck list or previous screen.
+
+Add a new card: opens the card creation flow (not shown here).
+
+6) Visual hierarchy (top → bottom, left → right)
+
+Header: Logo + Title | (Desktop) Nav | Notifications + Avatar
+
+Main: Exit link (left-aligned)
+
+Progress text (“1/10”)
+
+Flashcard (front/back flip stage)
+
+Flip hint text
+
+Prev/Next controls (left/right)
+
+Primary action: “Add a new card” (centered)
