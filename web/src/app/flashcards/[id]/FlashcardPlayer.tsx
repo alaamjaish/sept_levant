@@ -135,7 +135,7 @@ export function FlashcardPlayer({ set, cards }: FlashcardPlayerProps) {
 
     const keyup = (event: KeyboardEvent) => {
       if (event.code === "Space" || event.key === " " || event.key === "Spacebar") {
-        // important: if Space didn’t generate a click (DIV role=button), don’t swallow the next real click
+        // important: if Space didn't generate a click (DIV role=button), don't swallow the next real click
         ignoreClickRef.current = false;
       }
     };
@@ -244,7 +244,8 @@ export function FlashcardPlayer({ set, cards }: FlashcardPlayerProps) {
           Exit
         </Link>
         <div className="flex items-center gap-2">
-          <div className="text-base font-semibold text-[var(--text-primary)]">{set.title}</div>
+          {/* TITLE SIZE: Change text-base to text-lg for bigger, text-xl for even bigger */}
+          <div className="text-lg font-semibold text-[var(--text-primary)]">{set.title}</div>
           <EditFlashcardSetButton setId={set.id} title={set.title} description={set.description ?? null} />
         </div>
         <div>{progressLabel}</div>
@@ -259,19 +260,24 @@ export function FlashcardPlayer({ set, cards }: FlashcardPlayerProps) {
           onClick={handleCardClick}
           // IMPORTANT: no onKeyDown here — Space is handled globally to avoid double-flip
           className="relative flex w-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-3xl border border-[var(--border-dark)] bg-[var(--surface-dark)] px-10 py-16 text-center transition hover:border-[var(--accent-blue)] focus:outline-none focus-visible:outline-none"
+          // CARD HEIGHT: This min-height keeps the card size stable. Adjust the number (400) to make taller or shorter
+          style={{ minHeight: '400px' }}
         >
           {currentCard ? (
             <div className="w-full">
               {!isFlipped ? (
                 <div className="flex h-full flex-col items-center justify-center gap-6">
                   <p className="text-sm uppercase tracking-[0.3em] text-[var(--text-secondary)]">Front</p>
-                  <p className="text-4xl font-semibold leading-tight">{currentCard.front}</p>
+                  {/* FRONT TEXT SIZE: Change text-4xl to text-5xl for bigger, text-6xl for even bigger */}
+                  <p className="text-5xl font-semibold leading-tight">{currentCard.front}</p>
                 </div>
               ) : (
                 <div className="flex h-full flex-col items-center justify-center gap-6">
                   <p className="text-sm uppercase tracking-[0.3em] text-[var(--text-secondary)]">Meaning</p>
-                  <p className="text-3xl font-semibold text-[var(--accent-blue)]">{currentCard.meaning}</p>
-                  <div className="space-y-2 text-base text-[var(--text-secondary)]">
+                  {/* MEANING TEXT SIZE: Change text-3xl to text-4xl for bigger, text-5xl for even bigger */}
+                  <p className="text-4xl font-semibold text-[var(--accent-blue)]">{currentCard.meaning}</p>
+                  {/* EXAMPLE TEXT SIZE: Change text-base to text-lg for bigger, text-xl for even bigger */}
+                  <div className="space-y-2 text-lg text-[var(--text-secondary)]">
                     <p>{currentCard.exampleAr}</p>
                     <p className="text-[var(--text-primary)]/85">{currentCard.exampleEn}</p>
                   </div>

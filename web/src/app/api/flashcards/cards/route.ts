@@ -1,7 +1,8 @@
-import { cookies } from "next/headers";
+﻿import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import OpenAI from "openai";
+import { normalizeDetectedLanguage, type DetectedLanguage } from "../utils";
 
 const ARABIC_CHARS = /[\u0600-\u06FF]/;
 
@@ -10,11 +11,11 @@ type GeneratedCard = {
   back_en: string;
   example_ar: string;
   example_en: string;
-  detected_language: "arabic" | "english" | "unknown";
+  detected_language: DetectedLanguage;
 };
 
 async function generateCard(term: string): Promise<GeneratedCard> {
-  const detectedLanguage: GeneratedCard["detected_language"] = ARABIC_CHARS.test(term)
+  const detectedLanguage: DetectedLanguage = ARABIC_CHARS.test(term)
     ? "arabic"
     : /[a-zA-Z]/.test(term)
     ? "english"
@@ -27,7 +28,10 @@ async function generateCard(term: string): Promise<GeneratedCard> {
     return {
       front_ar: detectedLanguage === "arabic" ? term : fallbackFront,
       back_en: fallbackBack,
-      example_ar: detectedLanguage === "arabic" ? `${term} هون بالبيت` : "استعمل الكلمة",
+      example_ar:
+        detectedLanguage === "arabic"
+          ? `${term} U�U^U+ O"OU,O"USO�`
+          : "OO3O�O1U.U, OU,U�U,U.Oc",
       example_en: detectedLanguage === "english" ? `${term} at home` : "Use the word",
       detected_language: detectedLanguage,
     };
@@ -68,13 +72,16 @@ async function generateCard(term: string): Promise<GeneratedCard> {
   }
 
   const parsed = JSON.parse(raw) as Partial<GeneratedCard>;
+  const normalizedDetected = normalizeDetectedLanguage(parsed.detected_language ?? detectedLanguage);
+
   return {
     front_ar: parsed.front_ar ?? term,
     back_en: parsed.back_en ?? term,
     example_ar:
-      parsed.example_ar ?? (detectedLanguage === "arabic" ? `${term} هون بالبيت` : "استعمل الكلمة"),
-    example_en: parsed.example_en ?? (detectedLanguage === "english" ? `${term} at home` : "Use the word"),
-    detected_language: parsed.detected_language ?? detectedLanguage,
+      parsed.example_ar ??
+      (normalizedDetected === "arabic" ? `${term} U�U^U+ O"OU,O"USO�` : "OO3O�O1U.U, OU,U�U,U.Oc"),
+    example_en: parsed.example_en ?? (normalizedDetected === "english" ? `${term} at home` : "Use the word"),
+    detected_language: normalizedDetected,
   };
 }
 
@@ -116,6 +123,7 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (setError) {
+    console.error("Failed to lookup flashcard set", setError);
     return NextResponse.json({ error: "set_lookup_failed" }, { status: 500 });
   }
 
@@ -125,6 +133,7 @@ export async function POST(request: Request) {
 
   try {
     const generated = await generateCard(term);
+    const normalizedLanguage = normalizeDetectedLanguage(generated.detected_language);
 
     const { data, error } = await supabase
       .from("flashcards")
@@ -136,7 +145,7 @@ export async function POST(request: Request) {
         example_ar: generated.example_ar,
         example_en: generated.example_en,
         input_text: term,
-        input_language: generated.detected_language,
+        input_language: normalizedLanguage,
       })
       .select("id, front_ar, back_en, example_ar, example_en, created_at")
       .single();
@@ -147,7 +156,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ data });
   } catch (error) {
-    console.error("Failed to create flashcard", error);
+    const message = error instanceof Error ? error.message : JSON.stringify(error);
+    console.error("Failed to create flashcard", message, error);
     return NextResponse.json({ error: "generation_failed" }, { status: 500 });
   }
 }

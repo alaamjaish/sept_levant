@@ -1,7 +1,8 @@
-import { cookies } from "next/headers";
+﻿import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import OpenAI from "openai";
+import { normalizeDetectedLanguage, type DetectedLanguage } from "../../../utils";
 
 const ARABIC_CHARS = /[\u0600-\u06FF]/;
 
@@ -10,10 +11,10 @@ type GeneratedCard = {
   back_en: string;
   example_ar: string;
   example_en: string;
-  detected_language: "arabic" | "english" | "unknown";
+  detected_language: DetectedLanguage;
 };
 
-async function generateCard(term: string, detectedLanguage: GeneratedCard["detected_language"]): Promise<GeneratedCard> {
+async function generateCard(term: string, detectedLanguage: DetectedLanguage): Promise<GeneratedCard> {
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
@@ -22,7 +23,10 @@ async function generateCard(term: string, detectedLanguage: GeneratedCard["detec
     return {
       front_ar: detectedLanguage === "arabic" ? term : fallbackFront,
       back_en: fallbackBack,
-      example_ar: detectedLanguage === "arabic" ? `${term} هون بالبيت` : "استعمل الكلمة",
+      example_ar:
+        detectedLanguage === "arabic"
+          ? `${term} U�U^U+ O"OU,O"USO�`
+          : "OO3O�O1U.U, OU,U�U,U.Oc",
       example_en: detectedLanguage === "english" ? `${term} at home` : "Use the word",
       detected_language: detectedLanguage,
     };
@@ -42,13 +46,13 @@ async function generateCard(term: string, detectedLanguage: GeneratedCard["detec
 
   const completion = await openai.chat.completions.create({
     model: "gpt-4.1-mini",
-    temperature: 0.4,
+    temperature: 0.8,
     response_format: { type: "json_object" },
     messages: [
       {
         role: "system",
         content:
-          "You generate ultra-short bilingual flashcards for Levantine Arabic learners. Respond with JSON containing front_ar, back_en, example_ar, example_en, detected_language. front_ar must be Levantine Arabic script. back_en is the natural English meaning. example_ar must be Levantine (Shami) dialect, 3-4 words max, matching the term. example_en is the English meaning of that exact phrase, also 3-4 words.",
+          "You generate ultra-short bilingual flashcards for Levantine Arabic learners. Respond with JSON containing front_ar, back_en, example_ar, example_en, detected_language. front_ar must be Levantine Arabic script. back_en is the natural English meaning. example_ar must be Levantine (Shami) dialect, 3-5 words max, matching the term. example_en is the English meaning of that exact phrase, also 3-5 words.",
       },
       {
         role: "user",
@@ -63,13 +67,16 @@ async function generateCard(term: string, detectedLanguage: GeneratedCard["detec
   }
 
   const parsed = JSON.parse(raw) as Partial<GeneratedCard>;
+  const normalizedDetected = normalizeDetectedLanguage(parsed.detected_language ?? detectedLanguage);
+
   return {
     front_ar: parsed.front_ar ?? term,
     back_en: parsed.back_en ?? term,
     example_ar:
-      parsed.example_ar ?? (detectedLanguage === "arabic" ? `${term} هون بالبيت` : "استعمل الكلمة"),
-    example_en: parsed.example_en ?? (detectedLanguage === "english" ? `${term} at home` : "Use the word"),
-    detected_language: parsed.detected_language ?? detectedLanguage,
+      parsed.example_ar ??
+      (normalizedDetected === "arabic" ? `${term} U�U^U+ O"OU,O"USO�` : "OO3O�O1U.U, OU,U�U,U.Oc"),
+    example_en: parsed.example_en ?? (normalizedDetected === "english" ? `${term} at home` : "Use the word"),
+    detected_language: normalizedDetected,
   };
 }
 
@@ -101,6 +108,7 @@ export async function POST(_request: Request, { params }: RouteContext) {
     .maybeSingle();
 
   if (cardError) {
+    console.error("Failed to lookup flashcard", cardError);
     return NextResponse.json({ error: "card_lookup_failed" }, { status: 500 });
   }
 
@@ -109,12 +117,17 @@ export async function POST(_request: Request, { params }: RouteContext) {
   }
 
   const term = cardRow.input_text || "";
-  const detected = cardRow.input_language && cardRow.input_language !== "unknown"
-    ? (cardRow.input_language as GeneratedCard["detected_language"])
-    : (ARABIC_CHARS.test(term) ? "arabic" : /[a-zA-Z]/.test(term) ? "english" : "unknown");
+  const storedLanguage = normalizeDetectedLanguage(cardRow.input_language);
+  const fallbackLanguage: DetectedLanguage = ARABIC_CHARS.test(term)
+    ? "arabic"
+    : /[a-zA-Z]/.test(term)
+    ? "english"
+    : "unknown";
+  const detected = storedLanguage !== "unknown" ? storedLanguage : fallbackLanguage;
 
   try {
     const generated = await generateCard(term, detected);
+    const normalizedLanguage = normalizeDetectedLanguage(generated.detected_language);
 
     const { data, error } = await supabase
       .from("flashcards")
@@ -123,7 +136,7 @@ export async function POST(_request: Request, { params }: RouteContext) {
         back_en: generated.back_en,
         example_ar: generated.example_ar,
         example_en: generated.example_en,
-        input_language: generated.detected_language,
+        input_language: normalizedLanguage,
       })
       .eq("id", params.id)
       .eq("user_id", user.id)
@@ -136,7 +149,8 @@ export async function POST(_request: Request, { params }: RouteContext) {
 
     return NextResponse.json({ data });
   } catch (error) {
-    console.error("Failed to regenerate flashcard", error);
+    const message = error instanceof Error ? error.message : JSON.stringify(error);
+    console.error("Failed to regenerate flashcard", message, error);
     return NextResponse.json({ error: "regenerate_failed" }, { status: 500 });
   }
 }
