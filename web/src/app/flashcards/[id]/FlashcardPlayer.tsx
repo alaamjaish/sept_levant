@@ -1,31 +1,59 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { MouseEvent, useCallback, useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { Flashcard, FlashcardSet } from "@/data/flashcards";
+import AddFlashcardButton from "./AddFlashcardButton";
+import EditFlashcardSetButton from "./EditFlashcardSetButton";
 
 type FlashcardPlayerProps = {
   set: FlashcardSet;
   cards: Flashcard[];
 };
 
+type ListenerOptions = AddEventListenerOptions;
+
+type ApiCardPayload = {
+  id: string;
+  front_ar: string;
+  back_en: string;
+  example_ar: string;
+  example_en: string;
+  created_at: string;
+};
+
 export function FlashcardPlayer({ set, cards }: FlashcardPlayerProps) {
+  const router = useRouter();
+  const [cardsState, setCardsState] = useState(cards);
   const [index, setIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [, startTransition] = useTransition();
 
-  const cardButtonRef = useRef<HTMLButtonElement | null>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
   const focusFrameRef = useRef<number | null>(null);
   const ignoreClickRef = useRef(false);
 
-  const totalCount = cards.length;
-  const currentCard = cards[index];
+  useEffect(() => {
+    setCardsState(cards);
+    setIndex((prev) => {
+      if (cards.length === 0) return 0;
+      return Math.min(prev, cards.length - 1);
+    });
+    if (cards.length === 0) setIsFlipped(false);
+  }, [cards]);
+
+  const totalCount = cardsState.length;
+  const currentCard = cardsState[index] ?? null;
   const progressLabel = totalCount ? `${index + 1}/${totalCount}` : "0/0";
 
-  // Focus helper (next animation frame so it happens after re-render)
   const focusCardNextFrame = useCallback(() => {
     if (focusFrameRef.current != null) cancelAnimationFrame(focusFrameRef.current);
     focusFrameRef.current = requestAnimationFrame(() => {
-      cardButtonRef.current?.focus({ preventScroll: true });
+      cardRef.current?.focus({ preventScroll: true });
     });
   }, []);
 
@@ -49,50 +77,47 @@ export function FlashcardPlayer({ set, cards }: FlashcardPlayerProps) {
     };
   }, [focusCardNextFrame]);
 
-  // Wrap index if needed
+  // Clamp index if list changes
   useEffect(() => {
-    if (index >= totalCount && totalCount > 0) {
-      setIndex(0);
+    if (index >= cardsState.length && cardsState.length > 0) {
+      setIndex(cardsState.length - 1);
       setIsFlipped(false);
     }
-  }, [index, totalCount]);
+  }, [index, cardsState.length]);
 
   const handleFlip = useCallback(() => {
-    if (!totalCount) return;
+    if (!cardsState.length) return;
     setIsFlipped((prev) => !prev);
     focusCardNextFrame();
-  }, [totalCount, focusCardNextFrame]);
+  }, [cardsState.length, focusCardNextFrame]);
 
   const goTo = useCallback(
     (direction: "next" | "prev") => {
-      if (!totalCount) return;
-      setIndex((prev) => (direction === "next" ? (prev + 1) % totalCount : (prev - 1 + totalCount) % totalCount));
+      if (!cardsState.length) return;
+      setIndex((prev) => (direction === "next" ? (prev + 1) % cardsState.length : (prev - 1 + cardsState.length) % cardsState.length));
       setIsFlipped(false);
       focusCardNextFrame();
     },
-    [totalCount, focusCardNextFrame]
+    [cardsState.length, focusCardNextFrame]
   );
 
-  // Global keyboard shortcuts (capture so Space fires before focused buttons consume it)
+  // Global keyboard shortcuts — capture first; also clear Space "ignore" on keyup
   useEffect(() => {
-    const handleKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement ||
-        (target && target.getAttribute("contenteditable") === "true")
-      ) {
-        return;
-      }
+    const isTypingField = (t: HTMLElement | null) =>
+      t instanceof HTMLInputElement ||
+      t instanceof HTMLTextAreaElement ||
+      t instanceof HTMLSelectElement ||
+      (!!t && t.getAttribute("contenteditable") === "true");
 
-      const isSpace =
-        event.code === "Space" || event.key === " " || event.key === "Spacebar";
+    const keydown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (isTypingField(target)) return;
+
+      const isSpace = event.code === "Space" || event.key === " " || event.key === "Spacebar";
 
       if (isSpace) {
-        // Avoid the implicit "click" that browsers fire on keyup for focused buttons
-        event.preventDefault();
-        ignoreClickRef.current = true;
+        event.preventDefault();          // stops synthetic click from buttons
+        ignoreClickRef.current = true;   // but we'll clear it on keyup below
         handleFlip();
         return;
       }
@@ -108,9 +133,108 @@ export function FlashcardPlayer({ set, cards }: FlashcardPlayerProps) {
       }
     };
 
-    document.addEventListener("keydown", handleKey, { capture: true });
-    return () => document.removeEventListener("keydown", handleKey, { capture: true } as any);
+    const keyup = (event: KeyboardEvent) => {
+      if (event.code === "Space" || event.key === " " || event.key === "Spacebar") {
+        // important: if Space didn’t generate a click (DIV role=button), don’t swallow the next real click
+        ignoreClickRef.current = false;
+      }
+    };
+
+    const listenerOptions: ListenerOptions = { capture: true };
+    document.addEventListener("keydown", keydown, listenerOptions);
+    document.addEventListener("keyup", keyup, listenerOptions);
+    return () => {
+      document.removeEventListener("keydown", keydown, listenerOptions);
+      document.removeEventListener("keyup", keyup, listenerOptions);
+    };
   }, [handleFlip, goTo]);
+
+  useEffect(() => {
+    setActionError(null);
+  }, [index, cardsState.length]);
+
+  const triggerRefresh = useCallback(() => {
+    startTransition(() => router.refresh());
+  }, [router]);
+
+  const handleDelete = useCallback(async () => {
+    if (!currentCard || isDeleting) return;
+    setActionError(null);
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/api/flashcards/cards/${currentCard.id}`, { method: "DELETE" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.message || "Could not delete card.");
+      }
+      setCardsState((prev) => {
+        const next = prev.filter((item) => item.id !== currentCard.id);
+        if (next.length === 0) {
+          setIndex(0);
+          setIsFlipped(false);
+        } else {
+          setIndex((prevIndex) => Math.min(prevIndex, next.length - 1));
+        }
+        return next;
+      });
+      triggerRefresh();
+    } catch (error) {
+      console.error(error);
+      setActionError("Failed to delete the card. Try again.");
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [currentCard, isDeleting, triggerRefresh]);
+
+  const handleRegenerate = useCallback(async () => {
+    if (!currentCard || isRegenerating) return;
+    setActionError(null);
+    setIsRegenerating(true);
+    try {
+      const response = await fetch(`/api/flashcards/cards/${currentCard.id}/regenerate`, { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.message || "Could not regenerate card.");
+      const data = payload?.data as ApiCardPayload | undefined;
+      if (!data) throw new Error("Invalid response payload.");
+
+      setCardsState((prev) =>
+        prev.map((item) =>
+          item.id === data.id
+            ? {
+                ...item,
+                front: data.front_ar,
+                meaning: data.back_en,
+                exampleAr: data.example_ar,
+                exampleEn: data.example_en,
+              }
+            : item
+        )
+      );
+      setIsFlipped(true);
+      triggerRefresh();
+    } catch (error) {
+      console.error(error);
+      setActionError("Failed to regenerate. Please try again.");
+    } finally {
+      setIsRegenerating(false);
+    }
+  }, [currentCard, isRegenerating, triggerRefresh]);
+
+  const handleCardClick = useCallback(
+    (event: MouseEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('[data-card-control="true"]')) return;
+
+      // If last Space set ignore flag but (since DIV) no synthetic click fired,
+      // clear the flag here so this real click flips immediately.
+      if (ignoreClickRef.current) {
+        ignoreClickRef.current = false;
+        // do NOT return; we want this click to flip now
+      }
+      handleFlip();
+    },
+    [handleFlip]
+  );
 
   return (
     <div className="flex w-full flex-1 flex-col items-center gap-8">
@@ -119,28 +243,22 @@ export function FlashcardPlayer({ set, cards }: FlashcardPlayerProps) {
           <span aria-hidden="true">&larr;</span>
           Exit
         </Link>
-        <div className="text-base font-semibold text-[var(--text-primary)]">{set.title}</div>
+        <div className="flex items-center gap-2">
+          <div className="text-base font-semibold text-[var(--text-primary)]">{set.title}</div>
+          <EditFlashcardSetButton setId={set.id} title={set.title} description={set.description ?? null} />
+        </div>
         <div>{progressLabel}</div>
       </header>
 
-      <div className="w-full max-w-2xl">
-        <button
-          ref={cardButtonRef}
-          type="button"
-          onClick={(e) => {
-            // If Space triggered a synthetic click on keyup, swallow it
-            if (ignoreClickRef.current) {
-              ignoreClickRef.current = false;
-              e.preventDefault();
-              e.stopPropagation();
-              return;
-            }
-            handleFlip(); // real mouse/touch click
-          }}
-          className="relative flex w-full flex-col items-center justify-center overflow-hidden rounded-3xl border border-[var(--border-dark)]
-                     bg-[var(--surface-dark)] px-10 py-16 text-center transition hover:border-[var(--accent-blue)]
-                     focus:outline-none focus-visible:outline-none"
+      <div className="relative w-full max-w-2xl group">
+        <div
+          ref={cardRef}
+          role="button"
+          tabIndex={0}
           aria-pressed={isFlipped}
+          onClick={handleCardClick}
+          // IMPORTANT: no onKeyDown here — Space is handled globally to avoid double-flip
+          className="relative flex w-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-3xl border border-[var(--border-dark)] bg-[var(--surface-dark)] px-10 py-16 text-center transition hover:border-[var(--accent-blue)] focus:outline-none focus-visible:outline-none"
         >
           {currentCard ? (
             <div className="w-full">
@@ -159,10 +277,16 @@ export function FlashcardPlayer({ set, cards }: FlashcardPlayerProps) {
                   </div>
                   <button
                     type="button"
-                    className="mt-2 inline-flex items-center gap-2 rounded-full border border-[var(--accent-blue)] px-4 py-2 text-xs font-semibold
-                               text-[var(--accent-blue)] transition hover:bg-[var(--accent-blue)]/10"
+                    data-card-control="true"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleRegenerate();
+                    }}
+                    onMouseDown={(event) => event.stopPropagation()}
+                    disabled={isRegenerating}
+                    className="mt-2 inline-flex items-center gap-2 rounded-full border border-[var(--accent-blue)] px-4 py-2 text-xs font-semibold text-[var(--accent-blue)] transition hover:bg-[var(--accent-blue)]/10 disabled:cursor-not-allowed disabled:opacity-70"
                   >
-                    Regenerate sentence
+                    {isRegenerating ? "Regenerating..." : "Regenerate sentence"}
                   </button>
                 </div>
               )}
@@ -172,17 +296,49 @@ export function FlashcardPlayer({ set, cards }: FlashcardPlayerProps) {
               Add cards to start studying
             </div>
           )}
-        </button>
-        <p className="mt-3 text-center text-xs text-[var(--text-secondary)]">Click card or press spacebar to flip</p>
+        </div>
+
+        {currentCard && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              handleDelete();
+            }}
+            onMouseDown={(event) => event.stopPropagation()}
+            disabled={isDeleting}
+            className="absolute right-4 top-4 inline-flex items-center rounded-full bg-black/40 p-2 text-[var(--text-secondary)] opacity-0 transition hover:bg-black/60 hover:text-red-300 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-60"
+            aria-label="Delete card"
+            title="Delete card"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              <line x1="10" y1="11" x2="10" y2="17" />
+              <line x1="14" y1="11" x2="14" y2="17" />
+            </svg>
+          </button>
+        )}
       </div>
 
       <div className="flex items-center gap-4 text-sm text-[var(--text-secondary)]">
         <button
           type="button"
           onMouseDown={(e) => e.preventDefault()} // keep focus on card while clicking
-          onClick={() => goTo("prev")}
+          onClick={(e) => {
+            if (ignoreClickRef.current) {
+              ignoreClickRef.current = false;
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
+            goTo("prev");
+          }}
           className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 transition hover:bg-white/20"
           aria-label="Previous card"
+          disabled={totalCount === 0}
         >
           <span aria-hidden="true">&lt;</span>
         </button>
@@ -192,17 +348,26 @@ export function FlashcardPlayer({ set, cards }: FlashcardPlayerProps) {
         <button
           type="button"
           onMouseDown={(e) => e.preventDefault()} // keep focus on card while clicking
-          onClick={() => goTo("next")}
+          onClick={(e) => {
+            if (ignoreClickRef.current) {
+              ignoreClickRef.current = false;
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
+            goTo("next");
+          }}
           className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 transition hover:bg-white/20"
           aria-label="Next card"
+          disabled={totalCount === 0}
         >
           <span aria-hidden="true">&gt;</span>
         </button>
       </div>
 
-      <button className="inline-flex items-center gap-2 rounded-full bg-[var(--accent-blue)] px-5 py-2 text-sm font-semibold text-white transition hover:bg-[var(--accent-blue-hover)]">
-        + Add a new card
-      </button>
+      {actionError && <p className="text-sm text-red-400">{actionError}</p>}
+
+      <AddFlashcardButton setId={set.id} />
     </div>
   );
 }

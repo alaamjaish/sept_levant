@@ -1,9 +1,80 @@
 import Link from "next/link";
-import { flashcardSets } from "@/data/flashcards";
+import { cookies } from "next/headers";
+import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
+import type { FlashcardSet } from "@/data/flashcards";
+import NewFlashcardSetButton from "./NewFlashcardSetButton";
 
-const panelClass = "rounded-2xl border border-[var(--border-dark)] bg-[var(--surface-dark)]";
+const gradients = [
+  "linear-gradient(135deg, rgba(13,166,242,0.65), rgba(26,44,56,0.85))",
+  "linear-gradient(135deg, rgba(26,44,56,0.9), rgba(13,166,242,0.5))",
+  "linear-gradient(135deg, rgba(13,166,242,0.55), rgba(16,29,35,0.9))",
+  "linear-gradient(135deg, rgba(21,141,210,0.6), rgba(16,29,35,0.85))",
+];
 
-export default function FlashcardSetsPage() {
+function gradientFromSeed(seed: string | null | undefined, fallbackIndex: number) {
+  if (!seed) {
+    return gradients[fallbackIndex % gradients.length];
+  }
+  const hash = hashSeed(seed);
+  return gradients[hash % gradients.length];
+}
+
+function hashSeed(seed: string) {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash * 31 + seed.charCodeAt(i)) % 997;
+  }
+  return Math.abs(hash);
+}
+
+function formatCardCount(count: number) {
+  if (count === 1) return "1 Card";
+  return `${count} Cards`;
+}
+
+export default async function FlashcardSetsPage() {
+  const supabase = createServerComponentClient({ cookies });
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session?.user?.id) {
+    return (
+      <main className="min-h-screen bg-[var(--background-dark)] text-[var(--text-primary)]">
+        <div className="mx-auto flex min-h-screen max-w-3xl flex-col items-center justify-center px-6 text-center">
+          <h1 className="text-3xl font-semibold">Sign in to access flashcards</h1>
+          <p className="mt-3 max-w-md text-sm text-[var(--text-secondary)]">
+            Create an account or sign in to build personalised decks synced across your devices.
+          </p>
+          <Link
+            href="/login"
+            className="mt-6 inline-flex items-center gap-2 rounded-full bg-[var(--accent-blue)] px-6 py-2 text-sm font-semibold text-white transition hover:bg-[var(--accent-blue-hover)]"
+          >
+            Go to sign in
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
+  const { data: rows } = await supabase
+    .from("flashcard_sets")
+    .select("id,title,description,cover_seed,created_at, flashcards(count)")
+    .order("created_at", { ascending: false })
+    .eq("user_id", session.user.id);
+
+  const sets: FlashcardSet[] = (rows ?? []).map((row: any) => {
+    const count = Array.isArray(row.flashcards) && row.flashcards.length > 0 ? row.flashcards[0]?.count ?? 0 : 0;
+    return {
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      cardCount: count,
+      coverSeed: row.cover_seed,
+      createdAt: row.created_at,
+    };
+  });
+
   return (
     <main className="min-h-screen bg-[var(--background-dark)] text-[var(--text-primary)]">
       <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-6 pb-12 pt-6">
@@ -23,37 +94,39 @@ export default function FlashcardSetsPage() {
                 disabled
               />
             </label>
-            <button className="inline-flex shrink-0 items-center gap-2 rounded-full bg-[var(--accent-blue)] px-6 py-2 text-sm font-semibold text-white transition hover:bg-[var(--accent-blue-hover)]">
-              <span aria-hidden>+</span>
-              <span>New Set</span>
-            </button>
+            <NewFlashcardSetButton />
           </div>
         </header>
 
         <section className="mt-6 grid flex-1 grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
-          {flashcardSets.map((set) => (
+          {sets.length === 0 && (
+            <div className="col-span-full flex flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--border-dark)] bg-[var(--surface-dark)]/40 px-6 py-16 text-center text-[var(--text-secondary)]">
+              <p className="text-lg font-semibold text-[var(--text-primary)]">No sets yet</p>
+              <p className="mt-2 text-sm">
+                Start your first deck to see it appear here. Each set keeps translations and examples ready.
+              </p>
+            </div>
+          )}
+
+          {sets.map((set, index) => (
             <Link
               key={set.id}
               href={`/flashcards/${set.id}`}
-              className={`${panelClass} group flex flex-col overflow-hidden shadow-[0_24px_48px_rgba(0,0,0,0.2)] transition hover:-translate-y-1 hover:shadow-[0_28px_56px_rgba(0,0,0,0.25)]`}
+              className="group flex flex-col overflow-hidden rounded-2xl border border-[var(--border-dark)] bg-[var(--surface-dark)] shadow-[0_24px_48px_rgba(0,0,0,0.2)] transition hover:-translate-y-1 hover:shadow-[0_28px_56px_rgba(0,0,0,0.25)]"
             >
-              <div className="relative aspect-[4/3] w-full" style={{ background: set.image }}>
+              <div className="relative aspect-[4/3] w-full" style={{ background: gradientFromSeed(set.coverSeed, index) }}>
                 <div className="absolute inset-0 bg-gradient-to-b from-black/35 to-transparent" />
                 <div className="absolute left-4 top-4 rounded-full bg-black/55 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white">
-                  {set.cardCount} Cards
+                  {formatCardCount(set.cardCount)}
                 </div>
               </div>
               <div className="flex flex-1 flex-col justify-between px-5 pb-6 pt-5">
                 <div>
                   <h2 className="text-lg font-semibold">{set.title}</h2>
-                  <p className="mt-2 text-sm leading-snug text-[var(--text-secondary)]">{set.description}</p>
+                  {set.description && <p className="mt-2 text-sm leading-snug text-[var(--text-secondary)]">{set.description}</p>}
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2 text-xs text-[var(--accent-blue)]">
-                  {set.tags.map((tag) => (
-                    <span key={`${set.id}-${tag}`} className="rounded-full bg-[var(--accent-blue)]/15 px-3 py-1">
-                      {tag}
-                    </span>
-                  ))}
+                  <span className="rounded-full bg-[var(--accent-blue)]/15 px-3 py-1">Updated recently</span>
                 </div>
               </div>
             </Link>
