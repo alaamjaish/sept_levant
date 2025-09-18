@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { createPortal } from "react-dom";
 import type { FlashcardSet } from "@/data/flashcards";
 
 const colorPalette = [
@@ -42,6 +43,17 @@ export default function FlashcardSetCard({ set, index }: FlashcardSetCardProps) 
   const [editDescription, setEditDescription] = useState(set.description || "");
   const [isUpdating, setIsUpdating] = useState(false);
   const [isRevealed, setIsRevealed] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (isEditing) {
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = 'unset';
+      };
+    }
+  }, [isEditing]);
 
   // Touch/swipe handling
   const startX = useRef(0);
@@ -111,6 +123,13 @@ export default function FlashcardSetCard({ set, index }: FlashcardSetCardProps) 
     setIsEditing(true);
   };
 
+  const closeEditModal = () => {
+    setIsEditing(false);
+    setEditTitle(set.title);
+    setEditDescription(set.description || "");
+    setSelectedColor(getColorFromSeed(set.coverSeed));
+  };
+
   const handleDelete = async () => {
     setIsDeleting(true);
     try {
@@ -142,7 +161,7 @@ export default function FlashcardSetCard({ set, index }: FlashcardSetCardProps) 
       });
 
       if (response.ok) {
-        setIsEditing(false);
+        closeEditModal();
         router.refresh();
       }
     } catch (error) {
@@ -153,17 +172,23 @@ export default function FlashcardSetCard({ set, index }: FlashcardSetCardProps) 
   };
 
   // Edit Modal
-  if (isEditing) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-        <div className="w-full max-w-md rounded-3xl border border-[var(--border-dark)] bg-[var(--surface-dark)] p-6 shadow-xl">
+  const editModal = isEditing && typeof document !== 'undefined' ? createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 sm:px-4"
+      onClick={closeEditModal}
+    >
+      <div
+        className="flex h-full w-full items-center justify-center overflow-y-auto py-4 sm:py-8"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="w-full max-w-md rounded-3xl border border-[var(--border-dark)] bg-[var(--surface-dark)] p-6 shadow-xl sm:p-8">
           <div className="flex items-start justify-between mb-6">
             <div>
               <p className="text-xs uppercase tracking-[0.35em] text-[var(--text-secondary)]">Edit set</p>
-              <h2 className="mt-2 text-2xl font-semibold text-[var(--text-primary)]">Update flashcard set</h2>
+              <h2 className="mt-1 text-xl font-semibold text-[var(--text-primary)] sm:mt-2 sm:text-2xl">Update flashcard set</h2>
             </div>
             <button
-              onClick={() => setIsEditing(false)}
+              onClick={closeEditModal}
               className="rounded-full bg-white/5 p-2 text-[var(--text-secondary)] transition hover:bg-white/10"
               aria-label="Close"
             >
@@ -219,9 +244,9 @@ export default function FlashcardSetCard({ set, index }: FlashcardSetCardProps) 
             </div>
           </div>
 
-          <div className="mt-6 flex items-center justify-end gap-3">
+          <div className="mt-4 flex items-center justify-end gap-3 sm:mt-6">
             <button
-              onClick={() => setIsEditing(false)}
+              onClick={closeEditModal}
               className="rounded-full px-5 py-2 text-sm font-semibold text-[var(--text-secondary)] transition hover:bg-white/10"
             >
               Cancel
@@ -236,12 +261,50 @@ export default function FlashcardSetCard({ set, index }: FlashcardSetCardProps) 
           </div>
         </div>
       </div>
-    );
-  }
+    </div>,
+    document.body
+  ) : null;
 
   return (
-    <div className="relative overflow-hidden">
-      {/* Background Actions - Only show when revealed */}
+    <>
+      {editModal}
+      <div className="relative overflow-hidden group">
+        {/* Desktop Hover Actions - Only show on desktop on hover */}
+        <div className="absolute bottom-3 right-3 z-10 hidden sm:flex flex-row gap-2 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none">
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleEdit();
+            }}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-500 text-white shadow-md pointer-events-auto transition hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-300"
+            aria-label="Edit set"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
+          </button>
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleDelete();
+            }}
+            disabled={isDeleting}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500 text-white shadow-md pointer-events-auto transition hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-300 disabled:bg-red-400 disabled:cursor-not-allowed"
+            aria-label="Delete set"
+          >
+            {isDeleting ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            )}
+          </button>
+        </div>
+
+        {/* Background Actions - Only show when revealed on mobile */}
       {isRevealed && (
         <div className="absolute inset-y-0 right-0 flex">
           <button
@@ -319,6 +382,7 @@ export default function FlashcardSetCard({ set, index }: FlashcardSetCardProps) 
           </div>
         </Link>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

@@ -18,7 +18,8 @@
       "Bash(npm run build:*)",
       "Bash(npm uninstall:*)",
       "Bash(find:*)",
-      "Read(//c/Users/Alaa M. Jaish/Desktop/**)"
+      "Read(//c/Users/Alaa M. Jaish/Desktop/**)",
+      "Read(//c/Users/Alaa M. Jaish/OneDrive/الصور/Screenshots/**)"
     ],
     "deny": [],
     "ask": []
