@@ -15,7 +15,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const MODEL = process.env.LLM_MODEL || "gpt-4.1-mini";
+const MODEL = process.env.LLM_MODEL || "gpt-4.1-nano";
 
 function normalizeArabic(input: string) {
   return (input || "")

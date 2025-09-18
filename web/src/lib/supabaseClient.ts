@@ -1,5 +1,8 @@
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { createBrowserClient } from '@supabase/ssr';
 
-// Using auth-helpers ensures your browser sign-in sets the HTTP cookies
+// Using the new SSR package ensures your browser sign-in sets the HTTP cookies
 // that server routes use for Row Level Security.
-export const supabase = createClientComponentClient();
+export const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);

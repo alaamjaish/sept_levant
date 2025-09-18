@@ -1,6 +1,5 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import LiveTranscriber, { LiveTranscriberHandle } from "@/components/LiveTranscriber";
 import { supabase } from "@/lib/supabaseClient";
 
 type Exercise = {
@@ -34,20 +33,67 @@ export default function SpeakingPage() {
   const [message, setMessage] = useState<string>("");
   const [lastScore, setLastScore] = useState<number | null>(null);
   const [lastTranscript, setLastTranscript] = useState<string>("");
-  const [livePartial, setLivePartial] = useState<string>("");
-  const [liveFinals, setLiveFinals] = useState<string[]>([]);
-  const [liveStatus, setLiveStatus] = useState<"idle" | "connecting" | "listening" | "unsupported" | "error">("idle");
-  const [transcribing, setTranscribing] = useState(false);
   const [lastDurationSec, setLastDurationSec] = useState<number | null>(null);
+  const [recordPhase, setRecordPhase] = useState<"idle" | "recording" | "uploading" | "transcribing" | "evaluating" | "done" | "error">("idle");
+  const [phaseMessage, setPhaseMessage] = useState("");
+  const [volumeLevel, setVolumeLevel] = useState(0);
+  const isProcessing = recordPhase === "uploading" || recordPhase === "transcribing" || recordPhase === "evaluating";
 
   // Media + transcriber
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
-  const transcriberRef = useRef<LiveTranscriberHandle>(null);
   const [micStream, setMicStream] = useState<MediaStream | null>(null);
   const recStartRef = useRef<number | null>(null);
   const transcribeAbortRef = useRef<AbortController | null>(null);
-  const capturedTranscriptionRef = useRef<{ finals: string[]; partial: string } | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const meterFrameRef = useRef<number | null>(null);
+
+  const stopVisualizer = useCallback(() => {
+    if (meterFrameRef.current !== null) {
+      cancelAnimationFrame(meterFrameRef.current);
+      meterFrameRef.current = null;
+    }
+    analyserRef.current = null;
+    if (audioContextRef.current) {
+      try { audioContextRef.current.close(); } catch {}
+    }
+    audioContextRef.current = null;
+    setVolumeLevel(0);
+  }, [setVolumeLevel]);
+
+  const startVisualizer = useCallback((stream: MediaStream) => {
+    const AudioCtx = typeof window !== 'undefined' ? (window.AudioContext || (window as any).webkitAudioContext) : null;
+    if (!AudioCtx) return;
+    try { stopVisualizer(); } catch {}
+    const ctx: AudioContext = new AudioCtx();
+    audioContextRef.current = ctx;
+    const source = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    source.connect(analyser);
+    analyserRef.current = analyser;
+    const bufferLength = analyser.fftSize;
+    const dataArray = new Uint8Array(bufferLength);
+
+    const tick = () => {
+      if (!analyserRef.current) return;
+      analyserRef.current.getByteTimeDomainData(dataArray);
+      let sum = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        const v = dataArray[i] / 128 - 1;
+        sum += v * v;
+      }
+      const rms = Math.sqrt(sum / bufferLength);
+      setVolumeLevel(Math.min(1, rms * 4));
+      meterFrameRef.current = requestAnimationFrame(tick);
+    };
+
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+    tick();
+  }, [setVolumeLevel, stopVisualizer]);
 
   // Admin audio replace state
   const teacherMediaRef = useRef<MediaRecorder | null>(null);
@@ -108,17 +154,18 @@ export default function SpeakingPage() {
       }
     })();
     return () => {
-      try { transcriberRef.current?.stop(); } catch {}
       try { mediaRecorderRef.current?.stop(); } catch {}
       try { mediaRecorderRef.current?.stream.getTracks().forEach((t) => t.stop()); } catch {}
       try { micStream?.getTracks().forEach((t) => t.stop()); } catch {}
       try { transcribeAbortRef.current?.abort(); } catch {}
       transcribeAbortRef.current = null;
+      stopVisualizer();
     };
-  }, []);
+  }, [stopVisualizer]);
 
   // Reset simple UI when switching exercise
   useEffect(() => {
+    stopVisualizer();
     if (exercise?.arabic_text) setExerciseDraft(exercise.arabic_text);
     if (exercise?.level) setLevelDraft(exercise.level);
     setTitleDraft((exercise?.title || "").slice(0, 60));
@@ -129,8 +176,8 @@ export default function SpeakingPage() {
     setAudioDuration(0);
     const el = audioRef.current; if (el) { try { el.pause(); el.currentTime = 0; } catch {} }
     // clear scoring/transcripts
-    setLastScore(null); setMessage(""); setLastTranscript(""); setLivePartial(""); setLiveFinals([]); setTranscribing(false);
-  }, [exercise?.id]);
+    setLastScore(null); setMessage(""); setLastTranscript(""); setRecordPhase("idle"); setPhaseMessage(""); setVolumeLevel(0);
+  }, [exercise?.id, stopVisualizer]);
 
   // Reload audio when URL changes
   useEffect(() => {
@@ -150,64 +197,135 @@ export default function SpeakingPage() {
   const goNext = () => { if (!canNext) return; const next = library[idx + 1]; setExercise(next); };
 
   const startRecording = useCallback(async () => {
-    setMessage(""); setLastScore(null); setLastTranscript(""); setLivePartial(""); setLiveFinals([]); setLastDurationSec(null);
-    try { transcribeAbortRef.current?.abort(); } catch {};
-    transcribeAbortRef.current = null; setTranscribing(false);
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const mr = new MediaRecorder(stream);
-    setMicStream(stream);
-    recStartRef.current = Date.now();
-    chunksRef.current = [];
-    mr.ondataavailable = (e) => chunksRef.current.push(e.data);
-    mr.onstop = async () => {
-      const inferredType = (chunksRef.current[0] as any)?.type || "audio/webm";
-      const blob = new Blob(chunksRef.current, { type: inferredType });
-      setTranscribing(true);
-      let transcript = "";
-      const captured = capturedTranscriptionRef.current;
-      if (captured && captured.finals.length > 0) {
-        transcript = captured.finals.join(" ");
-      } else if (captured && captured.partial.trim()) {
-        transcript = captured.partial.trim();
-      } else {
+    if (recording || recordPhase === "uploading" || recordPhase === "transcribing" || recordPhase === "evaluating") {
+      return;
+    }
+    setMessage("");
+    setLastScore(null);
+    setLastTranscript("");
+    setLastDurationSec(null);
+    setRecordPhase("recording");
+    setPhaseMessage("Recording...");
+    try { transcribeAbortRef.current?.abort(); } catch {}
+    transcribeAbortRef.current = null;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      setMicStream(stream);
+      startVisualizer(stream);
+      const mr = new MediaRecorder(stream);
+      mediaRecorderRef.current = mr;
+      recStartRef.current = Date.now();
+      chunksRef.current = [];
+      mr.ondataavailable = (e) => chunksRef.current.push(e.data);
+      mr.onstop = async () => {
+        const startedAt = recStartRef.current;
+        if (startedAt) {
+          const sec = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+          setLastDurationSec(sec);
+        }
+        recStartRef.current = null;
+        setRecording(false);
+        stopVisualizer();
+        setMicStream(null);
+        mediaRecorderRef.current = null;
+        const inferredType = (chunksRef.current[0] as any)?.type || "audio/webm";
+        const blob = new Blob(chunksRef.current, { type: inferredType });
+        setRecordPhase("uploading");
+        setPhaseMessage("Uploading your recording...");
+        let transcript = "";
         try {
           const base64 = await blobToBase64(blob);
+          setRecordPhase("transcribing");
+          setPhaseMessage("Transcribing your speech...");
           const ctrl = new AbortController();
           transcribeAbortRef.current = ctrl;
-          const tRes = await fetch("/api/transcribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ audioBase64: base64, mimeType: blob.type || "audio/webm" }), signal: ctrl.signal });
-          const data = await tRes.json(); transcript = data?.transcript || "";
+          const tRes = await fetch("/api/transcribe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ audioBase64: base64, mimeType: blob.type || "audio/webm" }),
+            signal: ctrl.signal,
+          });
+          const data = await tRes.json();
+          transcript = data?.transcript || "";
         } catch (e: any) {
-          if (e?.name === "AbortError") { setTranscribing(false); transcribeAbortRef.current = null; return; }
+          if (e?.name === "AbortError") {
+            setRecordPhase("idle");
+            setPhaseMessage("Transcription cancelled.");
+            transcribeAbortRef.current = null;
+            return;
+          }
+          setRecordPhase("error");
+          setPhaseMessage("We couldn't transcribe your audio. Please try again.");
+          transcribeAbortRef.current = null;
+          return;
         }
-      }
-      setTranscribing(false); setLastTranscript(transcript || "");
-      if (transcribeAbortRef.current?.signal.aborted) { transcribeAbortRef.current = null; return; }
-      const sRes = await fetch("/api/check-accuracy-enhanced", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ originalText: exercise?.arabic_text ?? "", spokenText: transcript }) });
-      let resp: any = { score: 0, feedbackMessage: "" };
-      try { resp = await sRes.json(); } catch {}
-      const score = Number(resp?.score) || 0;
-      setLastScore(score);
-      setMessage(truncateFeedback(resp?.feedbackMessage || ""));
-      const passed = score >= 60;
-      try { await fetch("/api/attempts", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ exercise_id: exercise?.id, score, passed }) }); } catch {}
-      transcribeAbortRef.current = null;
-    };
-    mr.start(); mediaRecorderRef.current = mr; setRecording(true); transcriberRef.current?.start();
-  }, [exercise?.arabic_text, exercise?.id]);
+        transcribeAbortRef.current = null;
+        if (!transcript.trim()) {
+          setRecordPhase("error");
+          setPhaseMessage("We couldn't detect any speech. Try speaking a bit louder or move closer to the microphone.");
+          setLastTranscript("");
+          return;
+        }
+        setLastTranscript(transcript);
+        setRecordPhase("evaluating");
+        setPhaseMessage("Evaluating your accuracy...");
+        try {
+          const sRes = await fetch("/api/check-accuracy-enhanced", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ originalText: exercise?.arabic_text ?? "", spokenText: transcript }),
+          });
+          let resp: any = { score: 0, feedbackMessage: "" };
+          try { resp = await sRes.json(); } catch {}
+          const numeric = Number(resp?.score);
+          const score = Number.isFinite(numeric) ? Math.max(0, Math.min(100, Math.round(numeric))) : null;
+          if (score !== null) {
+            setLastScore(score);
+            setMessage(truncateFeedback(resp?.feedbackMessage || ""));
+            const passed = score >= 60;
+            try {
+              await fetch("/api/attempts", {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ exercise_id: exercise?.id, score, passed }),
+              });
+            } catch {}
+          } else {
+            setLastScore(null);
+          }
+        } catch (err) {
+          setRecordPhase("error");
+          setPhaseMessage("We couldn't evaluate your attempt. Please try again.");
+          return;
+        }
+        setRecordPhase("done");
+        setPhaseMessage("");
+      };
+      mr.start();
+      setRecording(true);
+    } catch (err) {
+      stopVisualizer();
+      setMicStream(null);
+      setRecording(false);
+      setRecordPhase("error");
+      setPhaseMessage("We couldn't access your microphone. Please check permissions and try again.");
+    }
+  }, [exercise?.arabic_text, exercise?.id, recordPhase, recording, startVisualizer, stopVisualizer]);
 
   const stopRecording = useCallback(() => {
-    // capture finals/partial from live ASR before stopping
-    const capturedFinals = [...liveFinals];
-    const capturedPartial = livePartial;
-    capturedTranscriptionRef.current = { finals: capturedFinals, partial: capturedPartial };
-    const startedAt = recStartRef.current;
+    if (recordPhase === "recording") {
+      setRecordPhase("uploading");
+      setPhaseMessage("Uploading your recording...");
+    }
     try { mediaRecorderRef.current?.stop(); } catch {}
     try { mediaRecorderRef.current?.stream.getTracks().forEach((t) => t.stop()); } catch {}
     try { micStream?.getTracks().forEach((t) => t.stop()); } catch {}
-    setMicStream(null); mediaRecorderRef.current = null;
-    if (startedAt) { const sec = Math.max(0, Math.floor((Date.now() - startedAt) / 1000)); setLastDurationSec(sec); }
-    recStartRef.current = null; setRecording(false); transcriberRef.current?.stop();
-  }, []);
+    setMicStream(null);
+    mediaRecorderRef.current = null;
+    stopVisualizer();
+    setRecording(false);
+  }, [micStream, recordPhase, stopVisualizer]);
 
   function timerText(start: number | null) {
     if (!start) return "00:00";
@@ -217,7 +335,7 @@ export default function SpeakingPage() {
   }
 
   if (loading) {
-    return <div className="min-h-screen bg-[#101d23] text-white flex items-center justify-center">Loading…</div>;
+    return <div className="min-h-screen bg-[#101d23] text-white flex items-center justify-center">Loading...</div>;
   }
 
   return (
@@ -340,7 +458,7 @@ export default function SpeakingPage() {
                             }
                           }}
                         >
-                          {levelSaving ? 'Saving…' : 'Save Level'}
+                          {levelSaving ? 'Saving...' : 'Save Level'}
                         </button>
                           </div>
                           {levelError && <div className="text-xs text-rose-500">{levelError}</div>}
@@ -384,7 +502,7 @@ export default function SpeakingPage() {
                                   }
                                 }}
                               >
-                                {metaSaving ? 'Saving…' : 'Save Title & Description'}
+                                {metaSaving ? 'Saving...' : 'Save Title & Description'}
                               </button>
                               {metaError && <div className="text-xs text-rose-500">{metaError}</div>}
                             </div>
@@ -441,7 +559,7 @@ export default function SpeakingPage() {
                             }}>Delete</button>
                           )}
                         </div>
-                        {replaceSaving && <div className="text-xs text-white/60">Saving…</div>}
+                        {replaceSaving && <div className="text-xs text-white/60">Saving...</div>}
                         {replaceError && <div className="text-xs text-rose-500">{replaceError}</div>}
                       </div>
                     </div>
@@ -453,48 +571,63 @@ export default function SpeakingPage() {
               <div className="flex flex-col bg-[var(--surface-dark)] rounded-xl p-6 gap-4">
                 <div className="flex-grow flex flex-col justify-center">
                   <h2 className="text-white text-xl font-bold tracking-tight text-center mb-1">Your Turn to Speak</h2>
-                  <p className="text-[var(--text-secondary)] text-sm text-center mb-4">Tap to record, then see your live transcription below.</p>
+                  <p className="text-[var(--text-secondary)] text-sm text-center mb-4">Tap record to practice. We'll guide you through each step.</p>
                   <div className="flex-grow flex justify-center items-center bg-black/20 rounded-lg border border-dashed border-[var(--border-dark)] p-4 min-h-[120px]">
-                    <div className="w-full">
+                    <div className="w-full flex flex-col items-center text-center gap-4">
                       {recording ? (
-                        <div className="text-[var(--text-secondary)] text-xl leading-relaxed text-right" style={{fontFamily:'"Noto Sans Arabic", sans-serif'}} dir="rtl" lang="ar">
-                          {liveFinals.length > 0 && (<div className="mb-3 text-white">{liveFinals.join(" ")}</div>)}
-                          <div className="text-white/70">{livePartial || (liveStatus === "unsupported" ? "Live captions not supported" : liveStatus === "connecting" ? "Connecting…" : liveStatus === "listening" ? "Listening…" : "")}</div>
-                        </div>
+                        <>
+                          <div className="text-white text-lg font-semibold">Recording {timerText(recStartRef.current)}</div>
+                          <div className="w-full max-w-sm">
+                            <div className="h-2 bg-[#1f2f36] rounded-full overflow-hidden">
+                              <div className="h-full bg-[var(--accent-blue)] transition-all duration-150" style={{ width: `${Math.min(100, Math.round(volumeLevel * 100))}%` }}></div>
+                            </div>
+                            <div className="text-xs text-white/60 mt-1 uppercase tracking-wide">Mic level</div>
+                          </div>
+                        </>
+                      ) : recordPhase !== "idle" && recordPhase !== "done" && recordPhase !== "error" ? (
+                        <>
+                          <span className="material-symbols-outlined text-4xl text-[var(--accent-blue)] animate-spin">autorenew</span>
+                          <p className="text-white/80 text-lg">{phaseMessage || "Working..."}</p>
+                        </>
                       ) : lastTranscript ? (
-                        <div className="text-[var(--text-secondary)] text-xl leading-relaxed text-right" style={{fontFamily:'"Noto Sans Arabic", sans-serif'}} dir="rtl" lang="ar">{lastTranscript}</div>
+                        <div className="text-[var(--text-secondary)] text-xl leading-relaxed text-right w-full" style={{fontFamily:'\"Noto Sans Arabic\", sans-serif'}} dir="rtl" lang="ar">
+                          {lastTranscript}
+                        </div>
                       ) : (
-                        <div className="text-white/40 text-center text-lg">Your transcription will appear here...</div>
+                        <div className="text-white/40 text-lg">Your transcription will appear here...</div>
+                      )}
+                      {recordPhase === "error" && (
+                        <p className="text-rose-400 text-sm font-medium">{phaseMessage}</p>
+                      )}
+                      {!recording && recordPhase === "idle" && phaseMessage && (
+                        <p className="text-white/60 text-sm">{phaseMessage}</p>
+                      )}
+                      {lastDurationSec !== null && !recording && recordPhase === "done" && (
+                        <p className="text-white/50 text-xs">Last recording: {formatDuration(lastDurationSec)}</p>
                       )}
                     </div>
-                    <LiveTranscriber ref={transcriberRef} lang="ar" onPartial={(t) => setLivePartial(t)} onFinal={(t) => setLiveFinals((prev) => (t ? [...prev, t] : prev))} onStatus={(s) => setLiveStatus(s)} />
                   </div>
                 </div>
 
                 <div className="flex justify-center items-center mb-2 relative">
-                  <button className={`flex items-center justify-center gap-3 h-16 w-16 rounded-full transition-colors text-white shadow-[0_0_0_8px_rgba(13,166,242,0.3)] ${recording ? "bg-red-600 hover:bg-red-500" : "bg-[var(--accent-blue)] hover:bg-[var(--accent-blue-hover)]"}`} onClick={recording ? stopRecording : startRecording}>
+                  <button className={`flex items-center justify-center gap-3 h-16 w-16 rounded-full transition-colors text-white shadow-[0_0_0_8px_rgba(13,166,242,0.3)] ${recording ? "bg-red-600 hover:bg-red-500" : "bg-[var(--accent-blue)] hover:bg-[var(--accent-blue-hover)]"} disabled:opacity-50 disabled:cursor-not-allowed`} onClick={recording ? stopRecording : startRecording} disabled={!recording && isProcessing}>
                     <span className="material-symbols-outlined text-4xl">{recording ? 'stop' : 'mic'}</span>
                   </button>
                   {recording && (<div className="absolute left-1/2 translate-x-12 text-white/70 text-xs font-medium bg-black/20 px-2 py-1 rounded-md whitespace-nowrap">Recording {timerText(recStartRef.current)}</div>)}
                 </div>
-                {recording && (
-                  <div>
-                  </div>
-                )}
-
                 <div className="bg-[#101d23] rounded-lg p-4 border border-[var(--border-dark)]">
                   <div className="flex items-center gap-3 mb-3">
                     <div className="w-2/3">
                       <p className="text-[var(--text-secondary)] text-xs font-medium">Your Score</p>
-                      <p className="text-white text-2xl font-bold">{lastScore !== null ? lastScore : 0}%</p>
+                      <p className="text-white text-2xl font-bold">{lastScore !== null ? `${lastScore}%` : "--"}</p>
                     </div>
                     <div className="w-1/3 flex items-center justify-center">
                       <div className="relative w-12 h-12">
                         <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
                           <path className="text-[#315668]" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3"></path>
-                          <path className={lastScore !== null ? (lastScore >= 80 ? "text-green-500" : lastScore >= 60 ? "text-yellow-500" : "text-red-500") : "text-[#315668]"} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" strokeDasharray={`${lastScore || 0}, 100`} strokeLinecap="round" strokeWidth="3"></path>
+                          <path className={lastScore !== null ? (lastScore >= 80 ? "text-green-500" : lastScore >= 60 ? "text-yellow-500" : "text-red-500") : "text-[#315668]"} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" strokeDasharray={`${(lastScore ?? 0)}, 100`} strokeLinecap="round" strokeWidth="3"></path>
                         </svg>
-                        <span className="absolute inset-0 flex items-center justify-center text-white font-bold text-sm">{lastScore !== null ? lastScore : 0}%</span>
+                        <span className="absolute inset-0 flex items-center justify-center text-white font-bold text-sm">{lastScore !== null ? `${lastScore}%` : "--"}</span>
                       </div>
                     </div>
                   </div>
@@ -502,7 +635,7 @@ export default function SpeakingPage() {
                     <p className="font-medium text-white mb-1 line-clamp-2">{lastScore !== null ? (message || "Great job! Keep practicing to improve your pronunciation.") : "Ready to start? Press the microphone button and speak clearly, remember, we all start somewhere!"}</p>
                   </div>
                   <div className="flex items-center gap-2 pt-2 mt-2 border-t border-[var(--border-dark)]">
-                    <button className="flex-1 h-8 px-3 rounded-md bg-[var(--border-dark)] text-white text-xs font-bold hover:bg-[#2c4c5c]" onClick={startRecording}><span className="truncate">{lastScore !== null ? "Try Again" : "Start Recording"}</span></button>
+                    <button className="flex-1 h-8 px-3 rounded-md bg-[var(--border-dark)] text-white text-xs font-bold hover:bg-[#2c4c5c] disabled:opacity-50 disabled:cursor-not-allowed" onClick={startRecording} disabled={recording || isProcessing}><span className="truncate">{lastScore !== null ? "Try Again" : "Start Recording"}</span></button>
                     {lastScore !== null && lastScore >= 60 && (
                       <button className="flex-1 h-8 px-3 rounded-md bg-[var(--accent-blue)] text-white text-xs font-bold hover:bg-[var(--accent-blue-hover)]" onClick={goNext}><span className="truncate">Next Challenge</span></button>
                     )}

@@ -1,39 +1,35 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
+import { createServerClient } from "@supabase/ssr";
 import type { FlashcardSet } from "@/data/flashcards";
 import NewFlashcardSetButton from "./NewFlashcardSetButton";
+import FlashcardSetCard from "./FlashcardSetCard";
 
-const gradients = [
-  "linear-gradient(135deg, rgba(13,166,242,0.65), rgba(26,44,56,0.85))",
-  "linear-gradient(135deg, rgba(26,44,56,0.9), rgba(13,166,242,0.5))",
-  "linear-gradient(135deg, rgba(13,166,242,0.55), rgba(16,29,35,0.9))",
-  "linear-gradient(135deg, rgba(21,141,210,0.6), rgba(16,29,35,0.85))",
-];
-
-function gradientFromSeed(seed: string | null | undefined, fallbackIndex: number) {
-  if (!seed) {
-    return gradients[fallbackIndex % gradients.length];
-  }
-  const hash = hashSeed(seed);
-  return gradients[hash % gradients.length];
-}
-
-function hashSeed(seed: string) {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash = (hash * 31 + seed.charCodeAt(i)) % 997;
-  }
-  return Math.abs(hash);
-}
-
-function formatCardCount(count: number) {
-  if (count === 1) return "1 Card";
-  return `${count} Cards`;
-}
 
 export default async function FlashcardSetsPage() {
-  const supabase = createServerComponentClient({ cookies });
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            );
+          } catch {
+            // The `setAll` method was called from a Server Component.
+            // This can be ignored if you have middleware refreshing
+            // user sessions.
+          }
+        },
+      },
+    }
+  );
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -94,44 +90,37 @@ export default async function FlashcardSetsPage() {
                 disabled
               />
             </label>
-            <NewFlashcardSetButton />
+            {/* Desktop: Keep button next to search */}
+            <div className="hidden sm:block">
+              <NewFlashcardSetButton />
+            </div>
+          </div>
+
+          {/* Mobile: Centered New Set Button */}
+          <div className="mt-6 flex justify-center sm:hidden">
+            <div className="transform scale-110">
+              <NewFlashcardSetButton />
+            </div>
           </div>
         </header>
 
-        <section className="mt-6 grid flex-1 grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-          {sets.length === 0 && (
-            <div className="col-span-full flex flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--border-dark)] bg-[var(--surface-dark)]/40 px-6 py-16 text-center text-[var(--text-secondary)]">
-              <p className="text-lg font-semibold text-[var(--text-primary)]">No sets yet</p>
-              <p className="mt-2 text-sm">
-                Start your first deck to see it appear here. Each set keeps translations and examples ready.
-              </p>
-            </div>
-          )}
-
-          {sets.map((set, index) => (
-            <Link
-              key={set.id}
-              href={`/flashcards/${set.id}`}
-              className="group relative aspect-square w-full max-w-xs mx-auto overflow-hidden rounded-xl border border-[var(--border-dark)] bg-[var(--surface-dark)] shadow-[0_12px_24px_rgba(0,0,0,0.15)] transition-all hover:-translate-y-1 hover:shadow-[0_16px_32px_rgba(0,0,0,0.2)]"
-              style={{ background: gradientFromSeed(set.coverSeed, index) }}
-            >
-              <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/20 to-black/60" />
-              <div className="absolute left-3 top-3 rounded-full bg-black/70 px-2.5 py-1 text-xs font-medium uppercase tracking-wide text-white">
-                {formatCardCount(set.cardCount)}
+        <section className="mt-6 flex flex-1 justify-center">
+          <div className="w-full max-w-4xl">
+            {sets.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--border-dark)] bg-[var(--surface-dark)]/40 px-6 py-16 text-center text-[var(--text-secondary)]">
+                <p className="text-lg font-semibold text-[var(--text-primary)]">No sets yet</p>
+                <p className="mt-2 text-sm">
+                  Start your first deck to see it appear here. Each set keeps translations and examples ready.
+                </p>
               </div>
-              <div className="absolute bottom-0 left-0 right-0 p-4">
-                <h2 className="text-lg font-bold text-white line-clamp-2">{set.title}</h2>
-                {set.description && (
-                  <p className="mt-1 text-sm text-white/80 line-clamp-1">
-                    {set.description}
-                  </p>
-                )}
-                <div className="mt-2">
-                  <span className="inline-block rounded-full bg-white/20 px-2.5 py-1 text-xs text-white">Updated recently</span>
-                </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {sets.map((set, index) => (
+                  <FlashcardSetCard key={set.id} set={set} index={index} />
+                ))}
               </div>
-            </Link>
-          ))}
+            )}
+          </div>
         </section>
       </div>
     </main>
