@@ -35,10 +35,10 @@ function formatCardCount(count: number) {
 export default async function FlashcardSetsPage() {
   const supabase = createServerComponentClient({ cookies });
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  if (!session?.user?.id) {
+  if (!user?.id) {
     return (
       <main className="min-h-screen bg-[var(--background-dark)] text-[var(--text-primary)]">
         <div className="mx-auto flex min-h-screen max-w-3xl flex-col items-center justify-center px-6 text-center">
@@ -61,7 +61,7 @@ export default async function FlashcardSetsPage() {
     .from("flashcard_sets")
     .select("id,title,description,cover_seed,created_at, flashcards(count)")
     .order("created_at", { ascending: false })
-    .eq("user_id", session.user.id);
+    .eq("user_id", user.id);
 
   const sets: FlashcardSet[] = (rows ?? []).map((row: any) => {
     const count = Array.isArray(row.flashcards) && row.flashcards.length > 0 ? row.flashcards[0]?.count ?? 0 : 0;

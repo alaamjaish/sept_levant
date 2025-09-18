@@ -7,9 +7,9 @@ export default async function Home() {
   try {
     const supabase = createServerComponentClient({ cookies });
     const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    isSignedIn = !!session;
+      data: { user },
+    } = await supabase.auth.getUser();
+    isSignedIn = !!user;
   } catch {}
   return (
     <main className="bg-[var(--background-dark)]">

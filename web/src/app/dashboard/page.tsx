@@ -13,14 +13,14 @@ export default async function DashboardPage() {
   let role: string | null = null;
   try {
     const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    isSignedIn = !!session;
-    if (session?.user?.id) {
+      data: { user },
+    } = await supabase.auth.getUser();
+    isSignedIn = !!user;
+    if (user?.id) {
       const { data } = await supabase
         .from("profiles")
         .select("role")
-        .eq("id", session.user.id)
+        .eq("id", user.id)
         .single();
       role = (data as any)?.role ?? null;
     }

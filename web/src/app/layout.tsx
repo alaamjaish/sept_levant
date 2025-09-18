@@ -44,10 +44,10 @@ export default async function RootLayout({
   try {
     const supabase = createServerComponentClient({ cookies });
     const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    isSignedIn = !!session;
-    email = session?.user?.email ?? null;
+      data: { user },
+    } = await supabase.auth.getUser();
+    isSignedIn = !!user;
+    email = user?.email ?? null;
   } catch {}
   return (
     <html lang="en">

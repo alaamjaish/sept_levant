@@ -13,10 +13,10 @@ type FlashcardSetPageProps = {
 export default async function FlashcardSetPage({ params }: FlashcardSetPageProps) {
   const supabase = createServerComponentClient({ cookies });
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  if (!session?.user?.id) {
+  if (!user?.id) {
     redirect("/login");
   }
 
@@ -24,7 +24,7 @@ export default async function FlashcardSetPage({ params }: FlashcardSetPageProps
     .from("flashcard_sets")
     .select("id,title,description,cover_seed,created_at")
     .eq("id", params.id)
-    .eq("user_id", session.user.id)
+    .eq("user_id", user.id)
     .single();
 
   if (setError || !setRow) {
