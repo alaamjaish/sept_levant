@@ -76,9 +76,11 @@ export default async function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <header data-root-header="true" className="sticky top-0 z-40 w-full border-b border-[#2b4554] bg-[#0f1a20]/90 text-white backdrop-blur supports-[backdrop-filter]:bg-[#0f1a20]/80">
-          <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
-            <a href="/" className="font-semibold tracking-tight">LevantTalk</a>
+        <header data-root-header="true" className="sticky top-0 z-50 w-full border-b border-[var(--border-dark)] bg-[var(--background-dark)]/95 backdrop-blur-md supports-[backdrop-filter]:bg-[var(--background-dark)]/95">
+          <div className="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
+            <a href="/" className="text-xl font-bold bg-gradient-to-r from-white to-blue-100 bg-clip-text text-transparent hover:from-blue-100 hover:to-white transition-all duration-200">
+              LevantTalk
+            </a>
             <AuthNav isSignedIn={isSignedIn} email={email} />
           </div>
         </header>
