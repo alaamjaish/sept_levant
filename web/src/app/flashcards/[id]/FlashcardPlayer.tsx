@@ -237,7 +237,7 @@ export function FlashcardPlayer({ set, cards }: FlashcardPlayerProps) {
   );
 
   return (
-    <div className="flex w-full flex-1 flex-col items-center gap-8">
+    <div className="flex w-full flex-1 flex-col items-center gap-6">
       <header className="flex w-full items-center justify-between text-sm text-[var(--text-secondary)]">
         <Link href="/flashcards" className="inline-flex items-center gap-2 text-[var(--accent-blue)] hover:underline">
           <span aria-hidden="true">&larr;</span>
@@ -259,9 +259,9 @@ export function FlashcardPlayer({ set, cards }: FlashcardPlayerProps) {
           aria-pressed={isFlipped}
           onClick={handleCardClick}
           // IMPORTANT: no onKeyDown here — Space is handled globally to avoid double-flip
-          className="relative flex w-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-3xl border border-[var(--border-dark)] bg-[var(--surface-dark)] px-10 py-16 text-center transition hover:border-[var(--accent-blue)] focus:outline-none focus-visible:outline-none"
-          // CARD HEIGHT: This min-height keeps the card size stable. Adjust the number (400) to make taller or shorter
-          style={{ minHeight: '400px' }}
+          className="relative flex w-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-3xl border border-[var(--border-dark)] bg-[var(--surface-dark)] px-10 py-12 text-center transition hover:border-[var(--accent-blue)] focus:outline-none focus-visible:outline-none"
+          // CARD HEIGHT: This min-height keeps the card size stable. Adjusted slightly smaller for better button visibility
+          style={{ minHeight: '350px' }}
         >
           {currentCard ? (
             <div className="w-full">
@@ -342,11 +342,11 @@ export function FlashcardPlayer({ set, cards }: FlashcardPlayerProps) {
             }
             goTo("prev");
           }}
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 transition hover:bg-white/20"
+          className="flex h-14 w-14 items-center justify-center rounded-full bg-white/10 transition hover:bg-white/20"
           aria-label="Previous card"
           disabled={totalCount === 0}
         >
-          <span aria-hidden="true">&lt;</span>
+          <span aria-hidden="true" className="text-xl">&lt;</span>
         </button>
 
         <span>{progressLabel}</span>
@@ -363,17 +363,46 @@ export function FlashcardPlayer({ set, cards }: FlashcardPlayerProps) {
             }
             goTo("next");
           }}
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 transition hover:bg-white/20"
+          className="flex h-14 w-14 items-center justify-center rounded-full bg-white/10 transition hover:bg-white/20"
           aria-label="Next card"
           disabled={totalCount === 0}
         >
-          <span aria-hidden="true">&gt;</span>
+          <span aria-hidden="true" className="text-xl">&gt;</span>
         </button>
       </div>
 
       {actionError && <p className="text-sm text-red-400">{actionError}</p>}
 
-      <AddFlashcardButton setId={set.id} />
+      <div className="grid grid-cols-3 items-center w-full">
+        <div></div>
+        <div className="flex justify-center">
+          <AddFlashcardButton setId={set.id} />
+        </div>
+        <div className="flex justify-end">
+          {currentCard && (
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-red-500/20 text-red-400 transition hover:bg-red-500/30 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-60 md:hidden"
+              aria-label="Delete current card"
+              title="Delete this card"
+            >
+              {isDeleting ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                  <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  <line x1="10" y1="11" x2="10" y2="17" />
+                  <line x1="14" y1="11" x2="14" y2="17" />
+                </svg>
+              )}
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
